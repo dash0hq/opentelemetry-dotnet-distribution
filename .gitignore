@@ -1,0 +1,28 @@
+## Build outputs
+bin/
+obj/
+*.user
+*.userosscache
+*.suo
+.vs/
+
+## .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## NuGet
+*.nupkg
+*.snupkg
+
+## macOS
+.DS_Store
+
+## Editor
+.idea/
+.vscode/
+
+## Spike scratch
+spike/upstream-checkout/
+spike/*/bin/
+spike/*/obj/
