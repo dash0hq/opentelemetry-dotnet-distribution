@@ -790,6 +790,14 @@ Maintain `dash0hq/opentelemetry-dotnet-distro` as a full fork of `opentelemetry-
 
 **Rejected because:** breaks the "distro is not a fork" principle from `distro.md`; entangles Dash0 additions with upstream code; makes rebasing painful because every Dash0 addition rebases against upstream even when it doesn't need to; loses the clean separation between "extensions in the -distro repo" (R5 default path) and "patches on the fork" (R5 fallback path).
 
+### A2b. Vendor upstream inside `-distro` (no separate fork repo)
+
+Copy the upstream source tree into `-distro/vendored/opentelemetry-dotnet-instrumentation/` at a pinned commit, apply Dash0 patches directly. No submodule, no fork repo — one repo carries everything.
+
+**Considered and rejected 2026-07-17.** Trade-off analysis: vendoring wins on single-repo simplicity (no submodule ergonomics, one `git clone`, no separate repo to manage). Fork+submodule wins on tracking ergonomics (native `git rebase` per upstream release; every engineer already knows the workflow). Every vendoring mechanic — `git subtree`, patch-file series, script-driven re-vendor — either adds learning cost, requires custom tooling, or degrades conflict-resolution granularity.
+
+Since the plan expects at least monthly upstream rebases (F5) and possible frequent upstream PR staging (R11, F4), tracking ergonomics dominate the recurring cost. Repo simplicity is a one-time onboarding cost. Kept as a fallback if fork maintenance turns out to be more painful in practice than modeled.
+
 ### A3. Per-runtime fork branches (`dash0/runtime-support-net6`, `-net7`, etc.)
 
 Separate long-lived branch per extended runtime.
@@ -820,6 +828,7 @@ Directly maps to origin S1-S6:
 ## Dependencies / Prerequisites
 
 - `dash0hq/opentelemetry-dotnet-instrumentation` fork exists on GitHub with write access for the release workflow. Created in U2.
+  - **PoC status (2026-07-17)**: currently staged as `dash0hq/opentelemetry-dotnet-instrumentation-poc` — private repo, plain (non-fork-network) create-then-push, not visible in upstream's fork list. Will be renamed or replaced with a `gh repo fork`-created public fork when the distro exits PoC phase. The runtime-support branch (`dash0-main`) and metadata layout are stable across the PoC → production transition; only the repo name/visibility changes.
 - Sigstore keyless signing available via GitHub OIDC — no additional key management infrastructure needed.
 - The Dash0 K8s operator team is available for downstream-consumer-contract review at U14.
 - `.NET SDK 10` (or a preview supporting `net10.0`) available on GitHub Actions runners by v1 release date.
