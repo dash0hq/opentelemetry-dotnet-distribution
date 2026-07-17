@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+
+    <!--
+      U1 spike: toggle the substitution mechanism.
+      When true, the consumer csproj swaps <PackageReference> to OpenTelemetry.AutoInstrumentation.Runtime.Managed
+      for a <ProjectReference> into spike/upstream-checkout/src/OpenTelemetry.AutoInstrumentation/.
+      Default true here since that IS the mechanism we're validating.
+    -->
+    <UseForkCheckout Condition="'$(UseForkCheckout)' == ''">true</UseForkCheckout>
+  </PropertyGroup>
+</Project>

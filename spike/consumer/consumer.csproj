@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Dash0.Spike.Consumer</RootNamespace>
+    <AssemblyName>spike-consumer</AssemblyName>
+    <!-- Only .NET 9 runtime installed locally; roll forward net8 app so we can execute. -->
+    <RollForward>LatestMajor</RollForward>
+  </PropertyGroup>
+
+  <!--
+    KTD1 mechanism under test: substitution of a <PackageReference> for a <ProjectReference>
+    against the git-checked-out fork under spike/upstream-checkout/.
+
+    Case A (additive): the patched project adds Constants.DistributionAttributes.Dash0SpikeMarker.
+    Case B (modifies existing + cross-project): the patched project changes
+      Constants.DistributionAttributes.TelemetryDistroNameAttributeValue to a Dash0 value,
+      and its csproj has a ProjectReference to OpenTelemetry.AutoInstrumentation.PluginApi —
+      the substituted project must resolve that inner ProjectReference correctly.
+  -->
+
+  <ItemGroup Condition="'$(UseForkCheckout)' != 'true'">
+    <PackageReference Include="OpenTelemetry.AutoInstrumentation.Runtime.Managed" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseForkCheckout)' == 'true'">
+    <ProjectReference Include="..\upstream-checkout\src\OpenTelemetry.AutoInstrumentation\OpenTelemetry.AutoInstrumentation.csproj" />
+  </ItemGroup>
+</Project>
