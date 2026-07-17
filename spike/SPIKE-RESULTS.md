@@ -120,7 +120,7 @@ Both revert cleanly on CI where SDK 10 is available.
 
 ## Feeding back to the plan
 
-- **U2** proceeds unchanged. The M0 spike's patches promote to the real `dash0hq/opentelemetry-dotnet-instrumentation` fork on `dash0/net6plus-support`, and U5 wires this same substitution mechanism through `patched-modules.yaml`.
+- **U2** proceeds unchanged. The M0 spike's patches promote to the real `dash0hq/opentelemetry-dotnet-instrumentation` fork on `dash0-main`, and U5 wires this same substitution mechanism through `patched-modules.yaml`.
 - **U5** stays as designed — the YAML-driven registry is a proper extension of the property-driven toggle validated here.
 - **The Alternatives Considered A1 fallback (local NuGet feed) does NOT need to be activated.** The plan's fail-fast condition on U1 does not trigger.
 

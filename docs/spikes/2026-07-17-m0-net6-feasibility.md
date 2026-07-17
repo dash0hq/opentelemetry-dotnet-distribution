@@ -104,12 +104,12 @@ The spike stopped once M0's core questions were answered. To fully complete M0 o
 2. Install `.NET 6` runtime locally, run a reference app.
 3. Extend the same measurement to `net7.0`, `net9.0` — expected to be strictly easier than `net6.0`.
 4. Run against `net10.0` (missing SDK locally).
-5. Bake the fixes into a proper `dash0/net6plus-support` branch on `dash0hq/opentelemetry-dotnet-instrumentation` (currently only a local branch on the upstream clone).
+5. Bake the fixes into a proper `dash0-main` branch on `dash0hq/opentelemetry-dotnet-instrumentation` (currently only a local branch on the upstream clone).
 6. Measure rebase cost by replaying the patches against 2–3 prior upstream releases.
 
 ## Files touched in the spike
 
-On the local clone at `/Users/mmanciop/git/opentelemetry-dotnet-instrumentation` on branch `dash0/net6plus-support`:
+On the local clone at `/Users/mmanciop/git/opentelemetry-dotnet-instrumentation` on branch `dash0-main`:
 
 - `Directory.Build.props` — `LangVersion` 14.0 → 13.0 (env-only)
 - `src/Directory.Build.props` — TFM set `net8.0` → `net6.0;net7.0;net8.0;net9.0`
@@ -127,5 +127,5 @@ The spike results validate the requirements doc's premise:
 
 - **R21 `.NET 6` inclusion**: proceed. Category-(d) blocker check passed; category-(b) budget within threshold.
 - **R22 extension window**: the low absolute patch count (~15 sites, mostly one-line changes) supports the "indefinite continuation" commitment framing rather than a bounded window.
-- **The single-`dash0/net6plus-support`-branch model**: validated. The patches multi-target cleanly via `#if` guards; per-runtime branches would just fragment the same edits.
+- **The single-`dash0-main`-branch model**: validated. The patches multi-target cleanly via `#if` guards; per-runtime branches would just fragment the same edits.
 - **Q_R25 (runtime-support test matrix)**: the CI validation surface is small enough that "one representative app per extended runtime" is likely sufficient.

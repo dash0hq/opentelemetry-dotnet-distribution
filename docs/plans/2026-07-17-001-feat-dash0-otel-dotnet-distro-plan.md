@@ -12,7 +12,7 @@ spike: docs/spikes/2026-07-17-m0-net6-feasibility.md
 
 Build v1 of the Dash0 OpenTelemetry .NET auto-instrumentation distribution. The shipped artifact is per-RID Linux bundles (`linux-x64`, `linux-arm64`, `linux-musl-x64`, `linux-musl-arm64`) plus macOS bundles for dev-machine testing (`osx-x64`, `osx-arm64`) — no Windows in v1. Each bundle is a `dash0-opentelemetry-dotnet-autoinstrumentation-<rid>.tar.gz` drop-in for upstream's `opentelemetry-dotnet-instrumentation` bundle, injected via the standard `CORECLR_*` / `DOTNET_STARTUP_HOOKS` / `OTEL_DOTNET_AUTO_HOME` env-var surface unchanged.
 
-v1 delivers the four brainstorm payoffs: `.NET 6+` runtime support (via the single `dash0/net6plus-support` fork branch — M0 validated), activation guards preventing double-activation, augmented resource detection, and flush-on-shutdown. A minimal `Dash0.OpenTelemetry.AutoInstrumentation` NuGet set is also published to GitHub Release for library-mode users.
+v1 delivers the four brainstorm payoffs: `.NET 6+` runtime support (via the single `dash0-main` fork branch — M0 validated), activation guards preventing double-activation, augmented resource detection, and flush-on-shutdown. A minimal `Dash0.OpenTelemetry.AutoInstrumentation` NuGet set is also published to GitHub Release for library-mode users.
 
 Supply chain: Sigstore keyless signing via GitHub OIDC, CycloneDX SBOM, SLSA level 2 provenance.
 
@@ -24,7 +24,7 @@ Origin: `docs/brainstorms/2026-07-17-dash0-otel-dotnet-distro-requirements.md`.
 
 Dash0's current .NET posture wraps upstream's OpenTelemetry auto-instrumentation via the Kubernetes operator; there is no Dash0-authored .NET instrumentation shipped today. Two triggers change that: (1) Microsoft's LTS/STS cadence keeps stranding enterprise customers on `.NET 6` (and, by November 2026, `.NET 8` LTS) — upstream drops runtimes on that schedule and this distro exists to close the gap indefinitely; (2) upstream cannot merge Dash0-authored instrumentation at the pace customer pain requires.
 
-The distro is Linux-first with macOS bundles for dev-machine testing only; Windows and `.NET Framework` are out of v1 (Q_S1 resolved 2026-07-17). The `.NET 6+` support policy is a **standing commitment** across all current and future .NET major versions from 6 upward — implemented as a single `dash0/net6plus-support` branch on the Dash0 fork of `opentelemetry-dotnet-instrumentation` that multi-targets every extended runtime in one source tree.
+The distro is Linux-first with macOS bundles for dev-machine testing only; Windows and `.NET Framework` are out of v1 (Q_S1 resolved 2026-07-17). The `.NET 6+` support policy is a **standing commitment** across all current and future .NET major versions from 6 upward — implemented as a single `dash0-main` branch on the Dash0 fork of `opentelemetry-dotnet-instrumentation` that multi-targets every extended runtime in one source tree.
 
 M0 (runtime-support feasibility spike) already ran on 2026-07-17 and validated `.NET 6` inclusion — see `docs/spikes/2026-07-17-m0-net6-feasibility.md`. M1 (substitution-mechanism spike, was origin Q10) is the remaining pre-scaffolding gate and is U1 of this plan.
 
@@ -35,7 +35,7 @@ M0 (runtime-support feasibility spike) already ran on 2026-07-17 and validated `
 **In this plan (v1 scope):**
 - Per-RID Linux bundles + macOS bundles.
 - Minimal Dash0-branded NuGet packages (`Dash0.OpenTelemetry.AutoInstrumentation`, `.Loader`) — published to GitHub Release, not `nuget.org`.
-- `dash0/net6plus-support` fork branch, promoted from local M0 spike to the real `dash0hq/opentelemetry-dotnet-instrumentation` fork.
+- `dash0-main` fork branch, promoted from local M0 spike to the real `dash0hq/opentelemetry-dotnet-instrumentation` fork.
 - Activation guards (R7), flush-on-shutdown (R8), resource detection augmentation (R6).
 - Canonical-application diff harness across the R21 runtime matrix.
 - CI/CD release workflow with per-RID native+managed bundle assembly.
@@ -71,19 +71,19 @@ M0 (runtime-support feasibility spike) already ran on 2026-07-17 and validated `
 
 ### KTD1. MSBuild `<ProjectReference>` substitution via git-submodule fork checkout
 
-The `-distro` repo consumes upstream OpenTelemetry .NET modules as ordinary NuGet packages from `nuget.org` at their `OpenTelemetry.*` package IDs. For modules Dash0 patches (specifically the `dash0/net6plus-support` branch), the build consumes the corresponding fork checkout via git-submodule under `forks/` + `<ProjectReference>` swap driven by `Directory.Packages.props` overrides.
+The `-distro` repo consumes upstream OpenTelemetry .NET modules as ordinary NuGet packages from `nuget.org` at their `OpenTelemetry.*` package IDs. For modules Dash0 patches (specifically the `dash0-main` branch), the build consumes the corresponding fork checkout via git-submodule under `forks/` + `<ProjectReference>` swap driven by `Directory.Packages.props` overrides.
 
 **Rationale:** origin R13. Mirrors the Java distro's Gradle-composite-build model in a .NET-native way — MSBuild's `<PackageVersion>` and `<ProjectReference>` are standard, and submodules give reviewable pinning per release. No Maven/NuGet-alternate-feed to stand up.
 
 **M1 gate:** U1 spikes this mechanism against a trivial patched module before U2+ commit to it. Fail-fast: if `<ProjectReference>` substitution against a submodule-checked-out fork does not produce correct bundle output (package-ID collisions, plugin discovery failure, ALC isolation break, or drop-in behavioral drift), pivot to a local NuGet feed model (Alternatives).
 
-### KTD2. Single `dash0/net6plus-support` runtime-support branch, multi-target source tree
+### KTD2. Single `dash0-main` runtime-support branch, multi-target source tree
 
 One long-lived branch on the affected fork(s) carries the entire `.NET 6+` policy. Upstream's `<TargetFrameworks>net8.0</TargetFrameworks>` becomes `<TargetFrameworks>net6.0;net7.0;net8.0;net9.0;net10.0</TargetFrameworks>` on the branch; `#if` guards handle per-version BCL API gaps. As new .NET majors ship and eventually EOL, they enter this branch via TFM addition — no new branch per runtime.
 
 **Rationale:** origin Key Decision + Q_S1 resolution + M0 spike evidence. Per-runtime branches would duplicate the same edits to the same upstream source files, produce combinatorial rebase pain, and force a merge for a single-artifact injector bundle. The M0 spike confirmed the multi-target pattern works (see `docs/spikes/2026-07-17-m0-net6-feasibility.md`).
 
-**Reason code:** `runtime-support-net6plus` recorded in the branch's `.dash0-branch-meta.yaml`. Branch is exempt from R11 upstream-PR requirement.
+**Reason code:** `dash0-carry` recorded in the branch's `.dash0-branch-meta.yaml`. Branch is exempt from R11 upstream-PR requirement.
 
 ### KTD3. Activation guard lives at the managed startup-hook layer
 
@@ -107,16 +107,16 @@ Flush-on-shutdown (R8) registers an `AppDomain.ProcessExit` handler in the start
 
 ### KTD6. `.dash0-branch-meta.yaml` schema for every consumed fork branch
 
-Every fork branch the `-distro` consumes (short-lived feature or long-lived `dash0/net6plus-support`) carries a metadata file at branch root:
+Every fork branch the `-distro` consumes (short-lived feature or long-lived `dash0-main`) carries a metadata file at branch root:
 
 ```yaml
 upstream_base_tag: v1.13.0
-reason: runtime-support-net6plus     # or "upstream-pr:https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/pull/5432"
+reason: dash0-carry     # or "upstream-pr:https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/pull/5432"
 depends_on_prs: []                   # PRs that must land before this can PR upstream
 conflicts_on_rebase: []              # PRs to watch during rebase
 ```
 
-**Rationale:** origin R10 + R11. Build-time validator reads this at MSBuild configuration time and fails the build if `upstream_base_tag` diverges from the `-distro`'s currently pinned upstream version. `reason: runtime-support-net6plus` is the R11 exemption.
+**Rationale:** origin R10 + R11. Build-time validator reads this at MSBuild configuration time and fails the build if `upstream_base_tag` diverges from the `-distro`'s currently pinned upstream version. `reason: dash0-carry` is the R11 exemption.
 
 ### KTD7. Canonical-application diff test is the R2 / R16 / R17 acceptance gate
 
@@ -143,7 +143,7 @@ flowchart TB
   end
   subgraph Fork["dash0hq/opentelemetry-dotnet-instrumentation"]
     F1[main<br/>tracks upstream release tags]
-    F2[dash0/net6plus-support<br/>long-lived, multi-TFM]
+    F2[dash0-main<br/>long-lived, multi-TFM]
     F3[dash0/short-lived-feature-branches<br/>per PR]
   end
   subgraph Distro["opentelemetry-dotnet-distro"]
@@ -357,10 +357,10 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
 
 ### U2. Promote M0 spike patches to real `dash0hq` fork
 
-- **Goal:** Create `dash0hq/opentelemetry-dotnet-instrumentation` fork; land the finished `dash0/net6plus-support` branch containing the M0 spike patches plus the remaining `#if NET8_0_OR_GREATER` narrowings and any missed sites; verify a clean `dotnet build` across `net6.0;net7.0;net8.0;net9.0` on Linux.
+- **Goal:** Create `dash0hq/opentelemetry-dotnet-instrumentation` fork; land the finished `dash0-main` branch containing the M0 spike patches plus the remaining `#if NET8_0_OR_GREATER` narrowings and any missed sites; verify a clean `dotnet build` across `net6.0;net7.0;net8.0;net9.0` on Linux.
 - **Requirements:** R14 (branching model), R15 (branch persistence), R21 (`.NET 6+` runtime set), R23 (instrumentations target full R21), KTD2. Success criterion S2.
 - **Dependencies:** U1.
-- **Files (on the fork, `dash0hq/opentelemetry-dotnet-instrumentation`, branch `dash0/net6plus-support`):**
+- **Files (on the fork, `dash0hq/opentelemetry-dotnet-instrumentation`, branch `dash0-main`):**
   - `.dash0-branch-meta.yaml` (new — schema defined in U4)
   - `Directory.Build.props` — `LangVersion` handling (see spike notes)
   - `src/Directory.Build.props` — TFM set expansion
@@ -373,12 +373,12 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
   - `src/OpenTelemetry.AutoInstrumentation/.publicApi/net{6,7,9}.0/PublicAPI.{Shipped,Unshipped}.txt` stubs
 - **Approach:**
   - Fork the upstream repo to `dash0hq/`. Push the fork's upstream-tracking branch (`main`) fast-forwarded to the current upstream release tag.
-  - Cut `dash0/net6plus-support` off the upstream-tracking branch at that tag.
+  - Cut `dash0-main` off the upstream-tracking branch at that tag.
   - Rebase the M0 spike patches from the local clone onto this branch. Complete the remaining `#if NET8_0_OR_GREATER` narrowings (particularly in `src/OpenTelemetry.AutoInstrumentation/Instrumentations/AdoNet/Contrib/SqlProcessor.cs` — the spike stopped at ~2 of ~8 sites).
-  - Add `.dash0-branch-meta.yaml` with `reason: runtime-support-net6plus` and `upstream_base_tag: <current tag>` per KTD6.
+  - Add `.dash0-branch-meta.yaml` with `reason: dash0-carry` and `upstream_base_tag: <current tag>` per KTD6.
   - Run `dotnet build` for the full solution across `net6.0`, `net7.0`, `net8.0`, `net9.0` on Linux (glibc). Ensure ZERO errors. Document any per-TFM warnings deemed acceptable.
 - **Execution note:** Characterization-first — before adding polyfills, run the existing upstream test suite against `net8.0` to establish baseline behavior. After polyfills land, the same test suite must pass on `net6.0` through `net9.0`.
-- **Patterns to follow:** The M0 spike's edits under the local `dash0/net6plus-support` branch on the throwaway clone. `docs/spikes/2026-07-17-m0-net6-feasibility.md` lists every touched file.
+- **Patterns to follow:** The M0 spike's edits under the local `dash0-main` branch on the throwaway clone. `docs/spikes/2026-07-17-m0-net6-feasibility.md` lists every touched file.
 - **Test scenarios:**
   - `dotnet build src/OpenTelemetry.AutoInstrumentation.sln -c Release` completes with zero errors across `net6.0`, `net7.0`, `net8.0`, `net9.0` on a fresh Linux checkout of the branch.
   - Upstream's existing xunit test suite passes on `net6.0`, `net7.0`, `net9.0` (in addition to the known-passing `net8.0`). Failures per (test, TFM) cell are triaged: fix at the polyfill site, or file as follow-up.
@@ -438,11 +438,11 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
   - `docs/rebase-runbook.md` — F2/F5 procedural doc
   - `Directory.Build.targets` — hooks the validator into every project's configuration
 - **Approach:**
-  - Submodule pinned to a specific commit on `dash0/net6plus-support` matching the upstream release the `-distro` is targeting.
+  - Submodule pinned to a specific commit on `dash0-main` matching the upstream release the `-distro` is targeting.
   - `.dash0-branch-meta.yaml` schema:
     ```yaml
     upstream_base_tag: v1.13.0
-    reason: runtime-support-net6plus | upstream-pr:<url>
+    reason: dash0-carry | upstream-pr:<url>
     depends_on_prs: []
     conflicts_on_rebase: []
     ```
@@ -454,7 +454,7 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
   - `docs/branching-model.md` documents the branch naming conventions:
     - Fork upstream-tracking: `main` (fast-forwarded to each upstream release tag).
     - Fork short-lived feature: `dash0/<slug>` (per upstream PR).
-    - Fork long-lived runtime-support: `dash0/net6plus-support`.
+    - Fork long-lived runtime-support: `dash0-main`.
 - **Patterns to follow:**
   - Java distro's `.dash0-branch-meta.yaml` schema (`opentelemetry-java-distro/build-config/`) and its Gradle validator equivalent (`opentelemetry-java-distro/buildSrc/src/main/kotlin/dash0.metadata-validator.gradle.kts`) — adapt to MSBuild task shape.
 - **Test scenarios:**
@@ -471,7 +471,7 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
 - **Requirements:** R13 (substitution mechanism), KTD1.
 - **Dependencies:** U1 (spike validated the mechanism), U4 (submodule + registry file exist).
 - **Files:**
-  - `build-config/patched-modules.yaml` (populated with the entries needed for the `dash0/net6plus-support` scope)
+  - `build-config/patched-modules.yaml` (populated with the entries needed for the `dash0-main` scope)
   - `build/Dash0.PatchedModulesResolver/Dash0.PatchedModulesResolver.csproj` (small MSBuild task project)
   - `build/Dash0.PatchedModulesResolver/PatchedModulesResolver.cs`
   - `Directory.Build.targets` — invokes the resolver task; injects `<ProjectReference>` for entries in `patched-modules.yaml`
@@ -628,7 +628,7 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
   - **Instrumentation removed:** Deliberately disable one instrumentation in the incoming bundle → the diff reports "instrumentation coverage delta: `db.system.name` span missing" for the affected app.
   - **Attribute renamed:** Deliberately rename `http.request.method` → `http.method` in a fork branch → diff reports the removal + addition per span.
   - `Covers R24 (shape parity across runtimes).` The AspNetCore canonical app produces (up to allowed variation like timing) the same OTLP payload shape when run on `net6.0` and `net8.0` under the same bundle version.
-  - Runtime-support-track-specific case: rebuild the bundle after a `dash0/net6plus-support` rebase → diff against pre-rebase bundle → zero shape diffs.
+  - Runtime-support-track-specific case: rebuild the bundle after a `dash0-main` rebase → diff against pre-rebase bundle → zero shape diffs.
 - **Verification:** Harness runs in CI; a fabricated bad change fails the check with a clear diff report.
 
 ### U10. GitHub Actions release workflow — per-RID bundles + NuGet packages + smoke test
@@ -682,7 +682,7 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
 
 ### U12. Rebase workflow tooling (F2, F5, R9, R15)
 
-- **Goal:** Provide a `dotnet run` script that automates the rebase cycle: fast-forward the fork's upstream-tracking branch to a new upstream release tag, rebase `dash0/net6plus-support` and any active short-lived branches, refresh the `-distro`'s submodule pins, and surface conflicts.
+- **Goal:** Provide a `dotnet run` script that automates the rebase cycle: fast-forward the fork's upstream-tracking branch to a new upstream release tag, rebase `dash0-main` and any active short-lived branches, refresh the `-distro`'s submodule pins, and surface conflicts.
 - **Requirements:** R9, R15, F2, F5.
 - **Dependencies:** U4, U9 (rebase completion triggers diff harness).
 - **Files:**
@@ -701,8 +701,8 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
     7. Exit with the diff outcome (green → release-cut candidate; red → accept/defer decision required).
 - **Test scenarios:**
   - **Happy path:** All active branches rebase cleanly against a new upstream tag. Submodule pins update. Diff harness reports zero drift. Exit code 0.
-  - **Conflict on short-lived branch:** One feature branch conflicts. The workflow halts, prints the branch and file list, and exits nonzero. The `dash0/net6plus-support` branch is not touched in this failure mode.
-  - **`Covers AE5.` Conflict on `dash0/net6plus-support`:** Simulated upstream refactor breaks a patch. The workflow halts with an explicit `runtime-support-track` classification, tagged as a stricter SLA per Q13.
+  - **Conflict on short-lived branch:** One feature branch conflicts. The workflow halts, prints the branch and file list, and exits nonzero. The `dash0-main` branch is not touched in this failure mode.
+  - **`Covers AE5.` Conflict on `dash0-main`:** Simulated upstream refactor breaks a patch. The workflow halts with an explicit `runtime-support-track` classification, tagged as a stricter SLA per Q13.
   - **Detect-merged:** A short-lived branch whose upstream PR merged in the new upstream tag is detected (by comparing the branch tip's patches against upstream); the workflow proposes branch deletion (interactive — user confirms).
 - **Verification:** Running the workflow against a real upstream release completes; conflicts are surfaced explicitly with actionable output.
 
@@ -766,7 +766,7 @@ Units are phased into four bands: **A. Foundation** (U1-U4), **B. Product featur
     - Table with columns: Runtime | Microsoft Status | Upstream OTel Status | Dash0 Distro Status | Notes.
     - Row per runtime in R21 (`net6.0` through `net10.0`) with current dates.
     - Retirement policy statement (R22): "Dash0 supports every .NET major version from 6 upward indefinitely. Retirement is triggered only by customer-telemetry signal below a threshold, unpatched security exposure, or sustained patch cost exceeding sustain judgment — with at least 6 releases notice."
-    - Q13 SLA reference for `dash0/net6plus-support` rebase conflicts.
+    - Q13 SLA reference for `dash0-main` rebase conflicts.
   - `README.md`:
     - Elevator pitch, installation, injection example, links to deep docs, verification, security-response contact.
 - **Test scenarios:**
@@ -794,7 +794,7 @@ Maintain `dash0hq/opentelemetry-dotnet-distro` as a full fork of `opentelemetry-
 
 Separate long-lived branch per extended runtime.
 
-**Rejected in the brainstorm** (post-review); documented here for completeness. Duplicated patches, combinatorial rebase pain, injector consumes a single bundle so no advantage. The single `dash0/net6plus-support` multi-target branch (KTD2) is the settled decision.
+**Rejected in the brainstorm** (post-review); documented here for completeness. Duplicated patches, combinatorial rebase pain, injector consumes a single bundle so no advantage. The single `dash0-main` multi-target branch (KTD2) is the settled decision.
 
 ### A4. Native-layer activation guard
 
@@ -832,8 +832,8 @@ Directly maps to origin S1-S6:
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | M1 spike (U1) fails — `<ProjectReference>` substitution doesn't work on multi-project fork | Low-Medium | High (blocks the whole architecture) | Explicit fail-fast in U1. Fallback: A1 local NuGet feed. Adds ~3 units of work, doesn't kill the project. |
-| Upstream's rate of adopting new .NET 8+ APIs faster than expected, driving patch-surface growth on `dash0/net6plus-support` | Medium | Medium | M0 spike suggests low current rate. Q_R22a policy revisit trigger fires if patch surface exceeds threshold. Retirement of `.NET 6` (F6) is the escape valve if the balance shifts. |
-| `.NET 8` LTS EOL in November 2026 during v1 lifecycle → upstream drops `net8.0` from its supported set → `net8.0` enters `dash0/net6plus-support` scope shortly after v1 ships | High | Low | This is the *policy working correctly*, not a risk. `dash0/net6plus-support` is designed for exactly this. Communicate proactively in `SUPPORTED-RUNTIMES.md`. |
+| Upstream's rate of adopting new .NET 8+ APIs faster than expected, driving patch-surface growth on `dash0-main` | Medium | Medium | M0 spike suggests low current rate. Q_R22a policy revisit trigger fires if patch surface exceeds threshold. Retirement of `.NET 6` (F6) is the escape valve if the balance shifts. |
+| `.NET 8` LTS EOL in November 2026 during v1 lifecycle → upstream drops `net8.0` from its supported set → `net8.0` enters `dash0-main` scope shortly after v1 ships | High | Low | This is the *policy working correctly*, not a risk. `dash0-main` is designed for exactly this. Communicate proactively in `SUPPORTED-RUNTIMES.md`. |
 | Canonical-app diff harness (U9) too strict, blocks legitimate improvements | Medium | Low | Allow-list mechanism in `docs/telemetry-diff-spec.md` + explicit accept/defer path in the release workflow. |
 | Native profiler build fragility on multi-RID matrix | Medium | Medium | Rely on upstream's proven CMake setup unchanged. If a build fails on a specific RID, that RID's release is skipped for that cycle with a follow-up. |
 | SLSA-2 provenance tooling changes break the release workflow | Low | Medium | Pin `slsa-github-generator` and `sigstore/cosign-installer` action versions. Manual verification path documented in `docs/verification.md` as backup. |
@@ -876,7 +876,7 @@ Phases A and B run in strict sequence. Phase C can begin in parallel with the ta
 - **v0.x preview releases** during Phases A-C to give the Dash0 K8s operator team something to integrate against early. No customer-facing announcement until v1.0.0.
 - **First customer rollout** — coordinated with the operator team's release cycle. Operator opts a small subset of customers into the Dash0 bundle before broad enablement.
 - **Rebase cadence** — align with upstream `opentelemetry-dotnet-instrumentation` release tags (roughly monthly). Each rebase is a scheduled event, not ad-hoc.
-- **On-call posture** — v1 does not require 24/7 on-call for the distro itself; upstream OTel doesn't offer that either. Rebase conflicts on `dash0/net6plus-support` follow the Q13 SLA (48h business hours for v1).
+- **On-call posture** — v1 does not require 24/7 on-call for the distro itself; upstream OTel doesn't offer that either. Rebase conflicts on `dash0-main` follow the Q13 SLA (48h business hours for v1).
 
 ---
 
