@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="Upstream OpenTelemetry .NET Auto-Instrumentation">
+    <!-- Pinned upstream release the distro consumes. Update in lockstep with
+         the submodule pin under forks/opentelemetry-dotnet-instrumentation
+         (per KTD1 + KTD6). -->
+    <PackageVersion Include="OpenTelemetry.AutoInstrumentation.Runtime.Managed" Version="1.16.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Upstream OpenTelemetry SDK / API (may be needed by Dash0 assemblies)">
+    <PackageVersion Include="OpenTelemetry" Version="1.16.0" />
+    <PackageVersion Include="OpenTelemetry.Api" Version="1.16.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Build-time only">
+    <GlobalPackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" />
+    <GlobalPackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

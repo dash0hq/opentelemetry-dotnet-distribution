@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override the src/Directory.Build.props R21 multi-TFM: the startup hook
+         must target netcoreapp3.1 to be loadable via DOTNET_STARTUP_HOOKS on
+         every runtime from .NET Core 3+ onward (per KTD8). One assembly, all
+         runtimes. -->
+    <TargetFrameworks>netcoreapp3.1</TargetFrameworks>
+    <RootNamespace>Dash0.OpenTelemetry.AutoInstrumentation.Loader</RootNamespace>
+    <AssemblyName>Dash0.OpenTelemetry.AutoInstrumentation.Loader</AssemblyName>
+    <Description>Dash0 startup hook. Loaded via DOTNET_STARTUP_HOOKS, initializes the plugin bootstrap chain.</Description>
+
+    <!-- Startup hook contract: assembly must contain a StartupHook class in the
+         global namespace with a static Initialize method. -->
+    <RootNamespace></RootNamespace>
+  </PropertyGroup>
+</Project>

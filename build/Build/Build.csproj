@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Dash0.Build</RootNamespace>
+    <AssemblyName>dash0-build</AssemblyName>
+
+    <!-- Bootstrap tool: excluded from IsPackable inheritance. -->
+    <IsPackable>false</IsPackable>
+
+    <!-- Suppress the parent trreat-warnings-as-errors here; the build tool is
+         internal scaffolding, not a shipped component. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>

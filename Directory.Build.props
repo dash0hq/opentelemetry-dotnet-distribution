@@ -1,0 +1,31 @@
+<Project>
+  <PropertyGroup>
+    <!-- Language -->
+    <LangVersion>13.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsAsErrors />
+    <NoWarn>$(NoWarn);CA1848</NoWarn>
+
+    <!-- Determinism / reproducibility (KTD4) -->
+    <Deterministic>true</Deterministic>
+    <DeterministicSourcePaths>true</DeterministicSourcePaths>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <DebugType>portable</DebugType>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Package metadata (inherited by NuGet-published projects) -->
+    <Copyright>Copyright Dash0 Inc.</Copyright>
+    <Company>Dash0 Inc.</Company>
+    <Authors>Dash0 Inc.</Authors>
+    <PackageProjectUrl>https://github.com/dash0hq/opentelemetry-dotnet-distro</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/dash0hq/opentelemetry-dotnet-distro.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+
+    <!-- Default: not packable — individual projects opt in -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,6 @@
+<Project>
+  <!-- Build tooling opts out of the parent -distro's src/ TFM matrix and
+       R21 constraints. This project is internal scaffolding, not a shipped
+       distro assembly. -->
+  <Import Project="..\Directory.Build.props" />
+</Project>

@@ -26,3 +26,9 @@ artifacts/
 spike/upstream-checkout/
 spike/*/bin/
 spike/*/obj/
+
+## Bundle output
+artifacts/
+
+## Un-ignore the solution file (defeats any parent-dir *.sln ignore)
+!*.sln

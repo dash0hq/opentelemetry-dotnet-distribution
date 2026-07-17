@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Dash0.OpenTelemetry.AutoInstrumentation</RootNamespace>
+    <AssemblyName>Dash0.OpenTelemetry.AutoInstrumentation</AssemblyName>
+    <Description>Dash0 additions to the OpenTelemetry .NET Auto-Instrumentation. Loaded via OTEL_DOTNET_AUTO_PLUGINS.</Description>
+  </PropertyGroup>
+
+  <!-- U3 stub: no upstream reference yet — Dash0Plugin is empty.
+       U6 adds <PackageReference Include="OpenTelemetry.AutoInstrumentation.Runtime.Managed" />
+       (or, once U5 lands, a <ProjectReference> into the fork submodule) when
+       the plugin actually consumes upstream plugin-surface types. -->
+</Project>
