@@ -828,7 +828,7 @@ Directly maps to origin S1-S6:
 ## Dependencies / Prerequisites
 
 - `dash0hq/opentelemetry-dotnet-instrumentation` fork exists on GitHub with write access for the release workflow. Created in U2.
-  - **PoC status (2026-07-17)**: currently staged as `dash0hq/opentelemetry-dotnet-instrumentation-poc` — private repo, plain (non-fork-network) create-then-push, not visible in upstream's fork list. Will be renamed or replaced with a `gh repo fork`-created public fork when the distro exits PoC phase. The runtime-support branch (`dash0-main`) and metadata layout are stable across the PoC → production transition; only the repo name/visibility changes.
+  - **PoC status (2026-07-17)**: repo exists at the production name and URL but as a **private, non-fork** repo (plain `gh repo create --private`, not created via `gh repo fork`). When the distro exits PoC, transition is: `gh repo delete` this repo → `gh repo fork open-telemetry/opentelemetry-dotnet-instrumentation --org dash0hq` to re-create it as a public fork in upstream's fork network → re-push `dash0-main` from the local clone. Same URL both before and after; downstream links keep working. Verified during PoC setup that GitHub allows delete-then-fork with the same name.
 - Sigstore keyless signing available via GitHub OIDC — no additional key management infrastructure needed.
 - The Dash0 K8s operator team is available for downstream-consumer-contract review at U14.
 - `.NET SDK 10` (or a preview supporting `net10.0`) available on GitHub Actions runners by v1 release date.
