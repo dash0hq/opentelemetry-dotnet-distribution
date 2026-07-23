@@ -1,0 +1,44 @@
+services:
+  builder:
+    build: ./builder
+    platform: linux/amd64
+    volumes:
+      - shared-artifact:/output
+
+  client:
+    build: ./client
+    platform: linux/amd64
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+      server:
+        condition: service_started
+    volumes:
+      - shared-artifact:/shared
+    env_file:
+      - default.env
+    environment:
+      - OTEL_SERVICE_NAME=client
+    networks:
+      - appnet
+
+  server:
+    build: ./server
+    platform: linux/amd64
+    depends_on:
+      builder:
+        condition: service_completed_successfully
+    volumes:
+      - shared-artifact:/shared
+    env_file:
+      - default.env
+    environment:
+      - OTEL_SERVICE_NAME=server
+    networks:
+      - appnet
+
+volumes:
+  shared-artifact:
+
+networks:
+  appnet:
