@@ -104,11 +104,12 @@ jobs:
             8.0.406
             9.0.200
 
-      - name: Restore NuGet packages
-        run: ./build.sh Restore
-
-      - name: Run BuildWorkflow
-        run: ./build.sh BuildWorkflow --no-restore true
+      - name: Build tracer-home
+        # Skip the standalone Restore target; it restores the whole solution,
+        # including test-applications that pin NServiceBus 9.2.6 (net8-only),
+        # which fails on the multi-TFM restore. BuildTracer restores only the
+        # projects it depends on.
+        run: ./build.sh BuildTracer
 
       - name: Download native x64 artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
@@ -167,11 +168,8 @@ jobs:
             8.0.406
             9.0.200
 
-      - name: Restore NuGet packages
-        run: ./build.sh Restore
-
-      - name: Run BuildWorkflow
-        run: ./build.sh BuildWorkflow --no-restore true
+      - name: Build tracer-home
+        run: ./build.sh BuildTracer
 
       - name: Package tracer-home
         run: |
