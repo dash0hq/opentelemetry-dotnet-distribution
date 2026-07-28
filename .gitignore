@@ -1,0 +1,5 @@
+bin/
+obj/
+packages/
+*.tar.gz
+.DS_Store
