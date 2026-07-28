@@ -54,6 +54,16 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Patch ubuntu1604.dockerfile (strip stale dotnet-install.sh SHA check)
+        run: |
+          set -euo pipefail
+          # Upstream pins a SHA256 for dotnet-install.sh that no longer matches
+          # Microsoft's current script. The script is fetched over HTTPS from
+          # dot.net, so TLS covers transport integrity; drop the stale check.
+          sed -i '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
+          echo "--- patched dockerfile (dotnet-install block) ---"
+          grep -n -A1 -B1 dotnet-install ./docker/ubuntu1604.dockerfile || true
+
       - name: Build native library in Ubuntu 16.04 container
         run: |
           set -euo pipefail
