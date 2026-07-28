@@ -32,7 +32,7 @@ jobs:
       - name: Resolve upstream SHA
         id: resolve
         env:
-          GH_TOKEN: ${{ secrets.UPSTREAM_ACCESS_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           sha=$(gh api "repos/${UPSTREAM_REPO}/commits/${{ inputs.upstream_ref }}" --jq .sha)
@@ -51,7 +51,7 @@ jobs:
         with:
           repository: ${{ env.UPSTREAM_REPO }}
           ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.UPSTREAM_ACCESS_TOKEN }}
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Build native library in Ubuntu 16.04 container
@@ -82,7 +82,7 @@ jobs:
         with:
           repository: ${{ env.UPSTREAM_REPO }}
           ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.UPSTREAM_ACCESS_TOKEN }}
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup .NET
@@ -145,7 +145,7 @@ jobs:
         with:
           repository: ${{ env.UPSTREAM_REPO }}
           ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.UPSTREAM_ACCESS_TOKEN }}
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup .NET

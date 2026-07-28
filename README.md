@@ -22,10 +22,9 @@ The [`release`](.github/workflows/release.yml) workflow is manually triggered
 
 ## Prerequisites
 
-The upstream repo is currently private. Set the following repository secret:
-
-- `UPSTREAM_ACCESS_TOKEN` — a PAT or fine-grained token with `contents: read` on
-  `dash0hq/opentelemetry-dotnet-instrumentation`.
+The upstream repo is currently private. The workflow reads the org-level secret
+`REPOSITORY_FULL_ACCESS_GITHUB_TOKEN` (must be granted to this repo) to check out
+`dash0hq/opentelemetry-dotnet-instrumentation`.
 
 ## Running a release
 
