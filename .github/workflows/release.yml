@@ -80,6 +80,25 @@ jobs:
           #    subsequent RUNs use a modern trust store.
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
           sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch) so add-apt-repository can reach Launchpad\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          # 4. Override cmake with a modern static build from Kitware's GitHub
+          #    releases. Xenial ships cmake 3.5.1; the kitware apt repo for
+          #    xenial no longer publishes a newer cmake, so upstream's
+          #    kitware-apt install silently keeps 3.5.1 — below the tracer's
+          #    cmake >= 3.10 requirement. Extract the static tarball into
+          #    /usr/local and symlink into /usr/bin so Nuke (which calls
+          #    /usr/bin/cmake explicitly) picks it up.
+          awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {
+            print
+            print ""
+            print "# Override cmake with static Linux build from Kitware GitHub (workflow patch)"
+            print "RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.9/cmake-3.29.9-linux-x86_64.tar.gz \\"
+            print "    | tar -xz -C /usr/local --strip-components=1 \\"
+            print "    && ln -sf /usr/local/bin/cmake /usr/bin/cmake \\"
+            print "    && cmake --version"
+            next
+          }
+          { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
+          mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
           echo "--- patched ubuntu1604.dockerfile ---"
           cat ./docker/ubuntu1604.dockerfile
 
