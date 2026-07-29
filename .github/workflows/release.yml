@@ -19,7 +19,6 @@ env:
   UPSTREAM_REPO: dash0hq/opentelemetry-dotnet-instrumentation
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   DOTNET_NOLOGO: 1
-  NUGET_PACKAGES: ${{ github.workspace }}/upstream/packages
 
 jobs:
   resolve-upstream:
@@ -40,62 +39,18 @@ jobs:
           echo "short_sha=${sha:0:7}" >> "$GITHUB_OUTPUT"
           echo "Resolved ${{ inputs.upstream_ref }} -> ${sha}"
 
-  build-native-x64:
-    name: Build native x64 (ubuntu 16.04 container)
+  build:
+    name: Build linux-${{ matrix.arch }} tracer-home
     needs: resolve-upstream
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Patch ubuntu1604.dockerfile
-        run: |
-          set -euo pipefail
-          # 1. Strip the stale SHA check for dotnet-install.sh — upstream pins
-          #    a SHA that no longer matches Microsoft's current script. TLS
-          #    from dot.net covers transport integrity.
-          sed -i '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
-          # 2. Fix the kitware cmake repo signed-by mismatch. The RUN writes
-          #    the kitware GPG key to /etc/apt/trusted.gpg.d/kitware.gpg but
-          #    the sources.list restricts trust to a non-existent
-          #    /usr/share/keyrings/kitware-archive-keyring.gpg. Result: apt
-          #    can't verify the kitware repo, silently keeps Ubuntu 16.04's
-          #    cmake 3.5.1, and the tracer's CMakeLists (requires >=3.10)
-          #    fails. Switch that restriction to [trusted=yes]; the key is
-          #    already trusted globally via /etc/apt/trusted.gpg.d/.
-          sed -i 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
-          echo "--- kitware source line ---"
-          grep -n "apt.kitware.com" ./docker/ubuntu1604.dockerfile || true
-          echo "--- dotnet-install block ---"
-          grep -n -A1 -B1 dotnet-install ./docker/ubuntu1604.dockerfile || true
-
-      - name: Build native library in Ubuntu 16.04 container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile ./docker
-          docker run -e OS_TYPE=linux-glibc --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-
-      - name: Upload native x64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-x64
-          path: bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
-
-  build-x64:
-    name: Build linux-x64 tracer-home
-    needs: [resolve-upstream, build-native-x64]
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - name: Checkout upstream
@@ -116,33 +71,16 @@ jobs:
             9.0.200
 
       - name: Build tracer-home
-        # Skip the standalone Restore target; it restores the whole solution,
-        # including test-applications that pin NServiceBus 9.2.6 (net8-only),
-        # which fails on the multi-TFM restore. BuildTracer restores only the
-        # projects it depends on.
+        # Use BuildTracer (not BuildWorkflow) to skip the standalone Restore
+        # target. Restore pulls the whole solution, including test-applications
+        # that pin NServiceBus 9.2.6 (net8-only) and fail multi-TFM restore.
+        # BuildTracer restores only the src projects it depends on.
         run: ./build.sh BuildTracer
-
-      - name: Download native x64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-x64
-          path: native-x64
-
-      - name: Swap in ubuntu-16.04-built native library
-        run: |
-          set -euo pipefail
-          src="native-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst="./bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          test -f "$dst"
-          rm "$dst"
-          cp "$src" "$dst"
-          file "$dst"
 
       - name: Package tracer-home
         run: |
           set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz"
+          out="dash0-opentelemetry-dotnet-instrumentation-linux-${{ matrix.arch }}.tar.gz"
           ls -la bin/tracer-home
           tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
@@ -150,56 +88,14 @@ jobs:
       - name: Upload release asset
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: release-linux-x64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
-  build-arm64:
-    name: Build linux-arm64 tracer-home
-    needs: resolve-upstream
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
-        with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-
-      - name: Build tracer-home
-        run: ./build.sh BuildTracer
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz"
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-arm64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
+          name: release-linux-${{ matrix.arch }}
+          path: dash0-opentelemetry-dotnet-instrumentation-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
           retention-days: 7
 
   release:
     name: Publish GitHub Release
-    needs: [resolve-upstream, build-x64, build-arm64]
+    needs: [resolve-upstream, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -225,10 +121,10 @@ jobs:
 
           ## Assets
 
-          - \`dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz\` — Linux x86_64 (glibc ≥ 2.23, native code built on Ubuntu 16.04).
-          - \`dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz\` — Linux aarch64 (glibc ≥ 2.35, native code built on Ubuntu 22.04 arm64).
+          - \`dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz\` — Linux x86_64, glibc ≥ 2.35 (built on Ubuntu 22.04).
+          - \`dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz\` — Linux aarch64, glibc ≥ 2.35 (built on Ubuntu 22.04 arm64).
 
-          Each archive extracts to a tracer-home layout with \`net/\`, \`netfx/\`, and the per-RID native lib directory (\`linux-x64/\` or \`linux-arm64/\`). Point \`OTEL_DOTNET_AUTO_HOME\` at the extracted directory.
+          Each archive extracts to a tracer-home layout: \`net/\`, \`AdditionalDeps/\`, \`linux-<arch>/\`, plus \`instrument.sh\` and legal files. Point \`OTEL_DOTNET_AUTO_HOME\` at the extracted directory.
           EOF
 
       - name: Create Release

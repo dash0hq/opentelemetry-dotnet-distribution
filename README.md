@@ -10,15 +10,19 @@ The [`release`](.github/workflows/release.yml) workflow is manually triggered
 (`workflow_dispatch`). It:
 
 1. Resolves the requested upstream ref to a commit SHA.
-2. Builds the native profiler (`OpenTelemetry.AutoInstrumentation.Native.so`) inside an
-   Ubuntu 16.04 container so it links against glibc 2.23 (broad Linux compat).
-3. Runs the upstream Nuke `BuildWorkflow` on `ubuntu-22.04` (x64) and `ubuntu-22.04-arm`
-   (arm64) to produce the managed tracer-home for each architecture.
-4. Swaps the ubuntu-16.04-built native lib into the x64 tracer-home (arm64 uses the
-   runner-built native lib).
-5. Packages each architecture as
-   `dash0-opentelemetry-dotnet-instrumentation-linux-<arch>.tar.gz` and publishes them
-   as a GitHub Release.
+2. In parallel, runs the upstream Nuke `BuildTracer` target on `ubuntu-22.04` (x64)
+   and `ubuntu-22.04-arm` (arm64) to produce the managed tracer-home and the native
+   profiler for each architecture. Native code links against the runner's glibc 2.35.
+3. Packages each architecture as
+   `dash0-opentelemetry-dotnet-instrumentation-linux-<arch>.tar.gz` and publishes
+   both as a GitHub Release.
+
+The Ubuntu-16.04-based glibc-2.23 native build used by upstream's own release is
+skipped intentionally — the base image is EOL and its stale apt sources need
+patching in several places. Ubuntu 22.04's glibc 2.35 is sufficient for the Dash0
+Operator's target environments (recent Kubernetes clusters and modern .NET base
+images). If broader glibc compatibility is needed later, a `manylinux2014`-based
+native build (glibc 2.17) would be the maintained path.
 
 ## Prerequisites
 
