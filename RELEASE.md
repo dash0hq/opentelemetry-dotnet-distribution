@@ -105,12 +105,19 @@ listed issues is fixed upstream, the corresponding patch can be dropped from
 - **kitware apt `signed-by` mismatch** — the source line references a keyring
   file that isn't created by the RUN block. Patch rewrites the sources.list
   entry to use `[trusted=yes]` so `apt-get update` no longer fails on GPG.
-- **Xenial CA bundle too old for Launchpad** — `add-apt-repository ppa:...`
-  hangs on the Launchpad API for ~9 minutes and fails with an unhelpful error
-  because Xenial's `ca-certificates` doesn't trust Launchpad's current cert.
-  Patch downloads a current Mozilla CA bundle (from `curl.se/ca/cacert.pem`)
-  on the runner and `COPY`s it over `/etc/ssl/certs/ca-certificates.crt` in
-  the container.
+- **Xenial CA bundle too old for modern TLS** — Xenial's `ca-certificates`
+  doesn't trust some current TLS certs. Patch downloads a current Mozilla
+  bundle (from `curl.se/ca/cacert.pem`) on the runner and `COPY`s it over
+  `/etc/ssl/certs/ca-certificates.crt` in the container so all HTTPS-using
+  RUNs have a modern trust store.
+- **Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test`** — that
+  command calls `api.launchpad.net` at build time and is intermittently
+  flaky from GitHub-Actions IP ranges (9-minute TLS timeouts, then an
+  unhelpful "user or team does not exist" error). Patch replaces the
+  `RUN add-apt-repository ppa:...` line with a direct
+  `echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/...`
+  — apt then pulls g++-9 straight from `ppa.launchpad.net` (which serves
+  packages fine over HTTP with no API round-trip).
 - **kitware xenial apt no longer publishes a modern cmake** — apt silently
   keeps Ubuntu 16.04's cmake 3.5.1, which is below the tracer's
   `cmake_minimum_required(VERSION 3.10..3.19)`. Patch injects a RUN that

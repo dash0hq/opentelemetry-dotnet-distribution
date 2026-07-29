@@ -102,16 +102,19 @@ jobs:
           #    fails. Switch that restriction to [trusted=yes]; the key is
           #    already trusted globally via /etc/apt/trusted.gpg.d/.
           sed -i 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
-          # 3. Refresh CA bundle. Xenial's ca-certificates is too old to trust
-          #    Launchpad's modern TLS cert, so `add-apt-repository ppa:...`
-          #    hangs on the Launchpad API and then fails with
-          #    `~ubuntu-toolchain-r user or team does not exist`. Fetch the
-          #    current Mozilla bundle from curl.se (using the runner's TLS,
-          #    which works), stage it in the docker build context, and layer
-          #    it into the image right after the base apt install so all
-          #    subsequent RUNs use a modern trust store.
+          # 3. Refresh CA bundle. Xenial's ca-certificates is too old to
+          #    trust some modern TLS certs; keep this so all HTTPS-using
+          #    RUNs (kitware, dot.net, etc.) have a modern trust store.
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
-          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch) so add-apt-repository can reach Launchpad\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          # 4. Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test`. That
+          #    command calls api.launchpad.net at build time and is
+          #    intermittently flaky from GitHub-Actions IP ranges even with
+          #    a fresh CA bundle (9-minute TLS timeouts then a nonsense
+          #    "user or team does not exist" error). Write the deb source
+          #    line directly with [trusted=yes]; apt then pulls g++-9 from
+          #    ppa.launchpad.net over HTTP with no cert or API round-trip.
+          sed -i 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
           # 4. Override cmake with a modern static build from Kitware's GitHub
           #    releases. Xenial ships cmake 3.5.1; the kitware apt repo for
           #    xenial no longer publishes a newer cmake, so upstream's
@@ -251,7 +254,13 @@ jobs:
 
           # CA-bundle refresh
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
-          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch) so add-apt-repository can reach Launchpad\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+
+          # Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test` — the
+          # Launchpad API call is intermittently flaky from GitHub-Actions
+          # IP ranges; write the deb source line directly with [trusted=yes]
+          # so apt fetches g++-9 straight from ppa.launchpad.net.
+          sed -i 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
 
           # Replace the clang install. apt.llvm.org/xenial has no arm64
           # packages, and Ubuntu 16.04 xenial arm64 only ships clang <= 3.9
