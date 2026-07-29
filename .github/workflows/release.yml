@@ -253,10 +253,28 @@ jobs:
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
           sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch) so add-apt-repository can reach Launchpad\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
 
-          # Strip the clang-5.0 install: apt.llvm.org/xenial has no arm64
-          # packages, and the tracer's native build uses gcc-9 via
-          # update-alternatives anyway.
+          # Replace the clang install. apt.llvm.org/xenial has no arm64
+          # packages, and Ubuntu 16.04 xenial arm64 only ships clang <= 3.9
+          # (insufficient for the tracer's -std=c++17). Install LLVM 8.0.1's
+          # prebuilt aarch64 tarball instead — LLVM builds those on Ubuntu
+          # 16.04, so they run against glibc 2.23. The tracer's CMakeLists
+          # locates clang/clang++ via find_program and uses them as
+          # CMAKE_C_COMPILER / CMAKE_CXX_COMPILER.
           sed -i '/^# Install newer clang$/,/update-alternatives --config clang++$/d' ./docker/ubuntu1604.dockerfile
+          awk '/^COPY cacert.pem \/etc\/ssl\/certs\/ca-certificates.crt$/ {
+            print
+            print ""
+            print "# Install clang from LLVM GitHub releases (workflow patch for arm64)"
+            print "RUN mkdir -p /opt/llvm \\"
+            print "    && curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-aarch64-linux-gnu.tar.xz \\"
+            print "    | tar -xJ -C /opt/llvm --strip-components=1 \\"
+            print "    && ln -sf /opt/llvm/bin/clang /usr/bin/clang \\"
+            print "    && ln -sf /opt/llvm/bin/clang++ /usr/bin/clang++ \\"
+            print "    && clang --version"
+            next
+          }
+          { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
+          mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
 
           # cmake tarball override — aarch64 variant
           awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {

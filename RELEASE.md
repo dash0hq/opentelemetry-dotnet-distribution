@@ -119,9 +119,13 @@ listed issues is fixed upstream, the corresponding patch can be dropped from
   pins is an amd64 manifest; on an arm64 host `docker build` cannot resolve
   it. Patch rewrites the base to `FROM arm64v8/ubuntu:16.04`, which docker
   pulls natively on `ubuntu-22.04-arm`.
-- **Skip apt.llvm.org clang-5.0 install** — that repo has no arm64 packages
-  and would fail. The tracer's native build uses gcc-9 via
-  `update-alternatives` anyway, so the entire clang RUN block is stripped.
+- **Replace clang install** — upstream installs clang-5.0 from
+  `apt.llvm.org/xenial`, which has no arm64 packages, and Ubuntu 16.04
+  xenial arm64's own apt archive only ships clang ≤ 3.9 (insufficient for
+  the tracer's `-std=c++17`). The workflow replaces that RUN block with a
+  download of LLVM 8.0.1's prebuilt `aarch64-linux-gnu` tarball (which
+  LLVM builds on Ubuntu 16.04, so it runs against glibc 2.23) and symlinks
+  `clang` and `clang++` into `/usr/bin`.
 
 ### Nuke target selection
 
