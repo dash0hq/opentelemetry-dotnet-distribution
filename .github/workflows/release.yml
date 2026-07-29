@@ -70,10 +70,18 @@ jobs:
           #    fails. Switch that restriction to [trusted=yes]; the key is
           #    already trusted globally via /etc/apt/trusted.gpg.d/.
           sed -i 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
-          echo "--- kitware source line ---"
-          grep -n "apt.kitware.com" ./docker/ubuntu1604.dockerfile || true
-          echo "--- dotnet-install block ---"
-          grep -n -A1 -B1 dotnet-install ./docker/ubuntu1604.dockerfile || true
+          # 3. Refresh CA bundle. Xenial's ca-certificates is too old to trust
+          #    Launchpad's modern TLS cert, so `add-apt-repository ppa:...`
+          #    hangs on the Launchpad API and then fails with
+          #    `~ubuntu-toolchain-r user or team does not exist`. Fetch the
+          #    current Mozilla bundle from curl.se (using the runner's TLS,
+          #    which works), stage it in the docker build context, and layer
+          #    it into the image right after the base apt install so all
+          #    subsequent RUNs use a modern trust store.
+          curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
+          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch) so add-apt-repository can reach Launchpad\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          echo "--- patched ubuntu1604.dockerfile ---"
+          cat ./docker/ubuntu1604.dockerfile
 
       - name: Build native library in Ubuntu 16.04 container
         run: |
