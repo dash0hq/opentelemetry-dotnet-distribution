@@ -1,50 +1,79 @@
-# dash0-opentelemetry-dotnet-distribution
+# opentelemetry-dotnet-distribution
 
-Builds Linux `x64` and `arm64` binaries of Dash0's fork of
-[`opentelemetry-dotnet-instrumentation`](https://github.com/dash0hq/opentelemetry-dotnet-instrumentation)
-(branch `dash0-main`) and publishes them as GitHub Releases for the Dash0 Operator to consume.
+Dash0's release channel for the OpenTelemetry .NET automatic instrumentation.
 
-## How it works
+This repository builds and publishes signed, versioned Linux `x64` and `arm64`
+tracer-home archives from
+[`dash0hq/opentelemetry-dotnet-instrumentation`](https://github.com/dash0hq/opentelemetry-dotnet-instrumentation)
+(branch `dash0-main`), so downstream consumers — primarily the
+[Dash0 Operator](https://github.com/dash0hq/dash0-operator) — can pull a pinned,
+reproducible bundle without cloning or building the upstream sources themselves.
 
-The [`release`](.github/workflows/release.yml) workflow is manually triggered
-(`workflow_dispatch`). It:
+Upstream sources are **not** vendored here. The pipeline fetches upstream at a
+specific commit, patches known-stale build steps at CI time, builds, and
+publishes.
 
-1. Resolves the requested upstream ref to a commit SHA.
-2. Builds the native profiler (`OpenTelemetry.AutoInstrumentation.Native.so`) inside an
-   Ubuntu 16.04 container so it links against glibc 2.23 (broad Linux compat).
-3. Runs the upstream Nuke `BuildWorkflow` on `ubuntu-22.04` (x64) and `ubuntu-22.04-arm`
-   (arm64) to produce the managed tracer-home for each architecture.
-4. Swaps the ubuntu-16.04-built native lib into the x64 tracer-home (arm64 uses the
-   runner-built native lib).
-5. Packages each architecture as
-   `dash0-opentelemetry-dotnet-instrumentation-linux-<arch>.tar.gz` and publishes them
-   as a GitHub Release.
+## Release artifacts
 
-## Prerequisites
+Each release attaches two archives:
 
-The upstream repo is currently private. The workflow reads the org-level secret
-`REPOSITORY_FULL_ACCESS_GITHUB_TOKEN` (must be granted to this repo) to check out
-`dash0hq/opentelemetry-dotnet-instrumentation`.
+| Asset | Runtime target | glibc floor | Native build host |
+| --- | --- | --- | --- |
+| `dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz` | Linux x86_64 | ≥ 2.23 | Ubuntu 16.04 container |
+| `dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz` | Linux aarch64 | ≥ 2.35 | GitHub-hosted `ubuntu-22.04-arm` |
 
-## Running a release
+Each archive contains the upstream `bin/tracer-home` layout:
 
-From the Actions tab, run the `release` workflow with:
-
-- **upstream_ref** — branch/tag/SHA of `opentelemetry-dotnet-instrumentation` to build
-  (defaults to `dash0-main`).
-- **release_tag** — the tag to create on this repo, e.g. `v0.1.0`.
-- **draft** — leave `true` while iterating; set to `false` when publishing for real.
-
-## Consuming from the Dash0 Operator
-
-Extract an archive to a directory and point the .NET auto-instrumentation environment
-variables at it:
-
-```sh
-tar -xzf dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz -C /opt/dash0/otel-dotnet-auto
-export OTEL_DOTNET_AUTO_HOME=/opt/dash0/otel-dotnet-auto
+```
+net/                           # net6.0 – net9.0 managed assemblies + StartupHook + Loader
+AdditionalDeps/                # deps.json overrides per .NET version
+linux-<arch>/                  # OpenTelemetry.AutoInstrumentation.Native.so
+integrations.json
+instrument.sh                  # sets CoreCLR profiler env vars
+LICENSE, NOTICE
 ```
 
-The archive contains the same layout upstream produces under `bin/tracer-home/`:
-`net/`, `AdditionalDeps/`, `linux-<arch>/`, plus `instrument.sh` and legal files.
-(`netfx/` is Windows-only and is not included in these Linux archives.)
+`netfx/` is Windows-only and is not included in these Linux archives. Release
+notes record the exact upstream commit SHA the archives were built from.
+
+## Consuming a release
+
+Extract into a directory and source `instrument.sh` to set the CoreCLR profiler
+environment variables for the current shell (or its child processes):
+
+```sh
+mkdir -p /opt/dash0/otel-dotnet-auto
+curl -fsSL \
+  https://github.com/dash0hq/opentelemetry-dotnet-distribution/releases/download/<tag>/dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz \
+  | tar -xz -C /opt/dash0/otel-dotnet-auto
+
+export OTEL_DOTNET_AUTO_HOME=/opt/dash0/otel-dotnet-auto
+. "${OTEL_DOTNET_AUTO_HOME}/instrument.sh"
+```
+
+Any .NET process launched from that shell will be instrumented. In a Kubernetes
+pod, the Dash0 Operator handles the mount and env-var injection; the archive
+layout is what its instrumentation-image build consumes.
+
+## Cutting a release
+
+See [`RELEASE.md`](RELEASE.md) for the maintainer release process — the
+one-click *Prepare Release* flow, the patches applied to upstream, and the
+manual-override path.
+
+## Repository history
+
+Two branches preserve pre-pipeline PoC and spike work:
+
+- `backup/main-pre-reset` — earlier iteration of the distribution scaffold,
+  per-RID bundle assembler, and the U1 substitution-mechanism spike.
+- `backup/add-clientserver-build-example` — an initial client-server app that
+  drove the agent-binaries build.
+
+Neither is on the release path; keep them for reference only.
+
+## License
+
+Distribution scaffolding in this repository (workflow, docs) is under the same
+license as the upstream project. Published archives include the upstream
+project's `LICENSE` and `NOTICE` files.

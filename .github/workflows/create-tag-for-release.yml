@@ -1,0 +1,47 @@
+name: create-tag-for-release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  create-tag-for-release:
+    name: Tag merged release PRs
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Non-default token so the pushed tag can trigger release.yml
+          # (the default GITHUB_TOKEN's events do not trigger further workflows).
+          # See https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
+          fetch-depth: 2
+
+      - name: Create and push tag if this is a release commit
+        run: |
+          set -euo pipefail
+          msg=$(git log -1 --pretty=%B)
+          # Match the exact subject line prepare-release.yml commits.
+          if [[ "${msg}" =~ ^chore:\ prepare\ release\ (v[0-9]+\.[0-9]+\.[0-9]+(-[[:alnum:].]+)?)$ ]] || \
+             [[ "${msg}" =~ ^chore:\ prepare\ release\ (v[0-9]+\.[0-9]+\.[0-9]+(-[[:alnum:].]+)?)[[:space:]] ]]; then
+            tag="${BASH_REMATCH[1]}"
+          else
+            echo "Latest commit is not a release commit; nothing to do."
+            exit 0
+          fi
+          echo "Detected release commit for ${tag}"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+            echo "::warning::tag ${tag} already exists locally, skipping"
+            exit 0
+          fi
+          git config user.name "dash0-releasebot"
+          git config user.email "dash0-releasebot@users.noreply.github.com"
+          git tag "${tag}"
+          git push origin "${tag}"
+          echo "Pushed tag ${tag}"
