@@ -70,14 +70,18 @@ The build pipeline has four jobs (all defined in
 1. **`resolve-upstream`** — Resolves the upstream ref to a concrete commit
    SHA; downstream jobs pin to that SHA so all artifacts in a release match.
 2. **`build-native-x64`** — Builds `OpenTelemetry.AutoInstrumentation.Native.so`
-   for `linux-x64` inside an Ubuntu 16.04 container so it links against
-   glibc 2.23. Publishes the `.so` as a workflow artifact.
-3. **`build-x64`** — On `ubuntu-22.04`, runs the upstream Nuke `BuildTracer`
-   target to produce the managed tracer-home, swaps in the glibc-2.23 native
-   library from job 2, tars the result.
-4. **`build-arm64`** — On `ubuntu-22.04-arm`, runs `BuildTracer` end-to-end
-   and tars the result. No native-lib swap; the runner-built `.so` ships as-is.
-5. **`release`** — Downloads both tarballs and publishes them as a GitHub
+   for `linux-x64` inside an Ubuntu 16.04 (amd64) container so it links
+   against glibc 2.23. Publishes the `.so` as a workflow artifact.
+3. **`build-native-arm64`** — Same idea, on `ubuntu-22.04-arm` inside an
+   `arm64v8/ubuntu:16.04` container. Publishes the aarch64 `.so` as a
+   workflow artifact.
+4. **`build-x64`** — On `ubuntu-22.04`, runs the upstream Nuke `BuildTracer`
+   target to produce the managed tracer-home, swaps in the glibc-2.23
+   native library from `build-native-x64`, and tars the result.
+5. **`build-arm64`** — On `ubuntu-22.04-arm`, runs `BuildTracer`, swaps in
+   the glibc-2.23 aarch64 native library from `build-native-arm64`, and
+   tars the result.
+6. **`release`** — Downloads both tarballs and publishes them as a GitHub
    Release.
 
 ## Patches applied to upstream at build time
@@ -88,7 +92,7 @@ so upstream itself does not need to change to unblock a release. If any of the
 listed issues is fixed upstream, the corresponding patch can be dropped from
 `.github/workflows/release.yml`.
 
-### `docker/ubuntu1604.dockerfile`
+### `docker/ubuntu1604.dockerfile` (both archs)
 
 - **Stale `dotnet-install.sh` SHA pin** — Microsoft rotated the script;
   upstream's pinned SHA no longer matches. Patch strips the `sha256sum -c`
@@ -106,7 +110,18 @@ listed issues is fixed upstream, the corresponding patch can be dropped from
   keeps Ubuntu 16.04's cmake 3.5.1, which is below the tracer's
   `cmake_minimum_required(VERSION 3.10..3.19)`. Patch injects a RUN that
   extracts the static Linux cmake tarball from Kitware's GitHub releases into
-  `/usr/local` and symlinks it into `/usr/bin`.
+  `/usr/local` and symlinks it into `/usr/bin`. The x64 job uses the
+  `linux-x86_64` tarball; the arm64 job uses `linux-aarch64`.
+
+### `docker/ubuntu1604.dockerfile` (arm64-only additions)
+
+- **Base image switch** — the `FROM ubuntu:16.04@sha256:...` line upstream
+  pins is an amd64 manifest; on an arm64 host `docker build` cannot resolve
+  it. Patch rewrites the base to `FROM arm64v8/ubuntu:16.04`, which docker
+  pulls natively on `ubuntu-22.04-arm`.
+- **Skip apt.llvm.org clang-5.0 install** — that repo has no arm64 packages
+  and would fail. The tracer's native build uses gcc-9 via
+  `update-alternatives` anyway, so the entire clang RUN block is stripped.
 
 ### Nuke target selection
 
