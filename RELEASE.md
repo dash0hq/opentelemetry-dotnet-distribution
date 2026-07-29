@@ -81,8 +81,13 @@ The build pipeline has four jobs (all defined in
 5. **`build-arm64`** — On `ubuntu-22.04-arm`, runs `BuildTracer`, swaps in
    the glibc-2.23 aarch64 native library from `build-native-arm64`, and
    tars the result.
-6. **`release`** — Downloads both tarballs and publishes them as a GitHub
-   Release.
+6. **`build-musl`** (matrix: x64, arm64) — Runs the full `BuildTracer`
+   inside upstream's `alpine.dockerfile` container
+   (`mcr.microsoft.com/dotnet/sdk:9.0.200-alpine3.20` — Alpine 3.20.6, musl
+   1.2.5) on `ubuntu-22.04` or `ubuntu-22.04-arm`. `OS_TYPE=linux-musl`
+   flips the tracer-home layout to `linux-musl-<arch>/`.
+7. **`release`** — Downloads all four tarballs and publishes them as a
+   GitHub Release.
 
 ## Patches applied to upstream at build time
 
@@ -126,6 +131,15 @@ listed issues is fixed upstream, the corresponding patch can be dropped from
   download of LLVM 8.0.1's prebuilt `aarch64-linux-gnu` tarball (which
   LLVM builds on Ubuntu 16.04, so it runs against glibc 2.23) and symlinks
   `clang` and `clang++` into `/usr/bin`.
+
+### `docker/alpine.dockerfile` (musl builds)
+
+- **Stale `dotnet-install.sh` SHA pin** — same as ubuntu 16.04; strip it.
+- **Exact apk version pins** — upstream pins `clang=17.0.6-r1`,
+  `cmake=3.29.3-r0`, etc. Alpine 3.20's apk repos supersede these patch
+  versions over time, causing "unable to select packages" errors. Patch
+  strips only the `=X.Y[.Z]-rN` version suffixes on `apk add` lines
+  (leaving `ENV KEY=value` assignments alone).
 
 ### Nuke target selection
 

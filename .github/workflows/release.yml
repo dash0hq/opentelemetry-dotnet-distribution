@@ -373,9 +373,71 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-musl:
+    name: Build linux-musl-${{ matrix.arch }} tracer-home (alpine container)
+    needs: resolve-upstream
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ needs.resolve-upstream.outputs.sha }}
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Patch alpine.dockerfile
+        run: |
+          set -euo pipefail
+          # 1. Strip the stale SHA check for dotnet-install.sh (same issue as
+          #    ubuntu1604.dockerfile — Microsoft rotated the script).
+          sed -i '/sha256sum -c/d' ./docker/alpine.dockerfile
+          # 2. Remove apk exact-version pins (e.g. clang=17.0.6-r1). Alpine
+          #    3.20's apk repos drift as patch versions are superseded, and
+          #    exact pins that miss cause "unable to select packages" errors.
+          #    Only strip patterns that look like =X.Y[.Z]-rN — leave
+          #    ENV=value assignments alone.
+          sed -i 's/=[0-9][0-9.]*-r[0-9]*//g' ./docker/alpine.dockerfile
+          echo "--- patched alpine.dockerfile ---"
+          cat ./docker/alpine.dockerfile
+
+      - name: Build tracer-home in alpine container
+        run: |
+          set -euo pipefail
+          docker build -t dash0-alpine-build -f ./docker/alpine.dockerfile ./docker
+          docker run -e OS_TYPE=linux-musl --rm \
+            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
+            dash0-alpine-build \
+            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildTracer'
+
+      - name: Package tracer-home
+        run: |
+          set -euo pipefail
+          out="dash0-opentelemetry-dotnet-instrumentation-linux-musl-${{ matrix.arch }}.tar.gz"
+          ls -la bin/tracer-home
+          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
+          ls -lh "${GITHUB_WORKSPACE}/${out}"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: release-linux-musl-${{ matrix.arch }}
+          path: dash0-opentelemetry-dotnet-instrumentation-linux-musl-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Publish GitHub Release
-    needs: [resolve-upstream, build-x64, build-arm64]
+    needs: [resolve-upstream, build-x64, build-arm64, build-musl]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -384,15 +446,25 @@ jobs:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Download x64 asset
+      - name: Download glibc x64 asset
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           name: release-linux-x64
 
-      - name: Download arm64 asset
+      - name: Download glibc arm64 asset
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           name: release-linux-arm64
+
+      - name: Download musl x64 asset
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-x64
+
+      - name: Download musl arm64 asset
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-arm64
 
       - name: Write release notes
         env:
@@ -405,8 +477,10 @@ jobs:
 
           - \`dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz\` — Linux x86_64, glibc ≥ 2.23 (native code built on Ubuntu 16.04).
           - \`dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz\` — Linux aarch64, glibc ≥ 2.23 (native code built on Ubuntu 16.04 arm64).
+          - \`dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz\` — Linux x86_64 musl (built on Alpine 3.20). For Alpine-based .NET images.
+          - \`dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz\` — Linux aarch64 musl (built on Alpine 3.20). For Alpine-based .NET images.
 
-          Each archive extracts to the upstream \`bin/tracer-home\` layout (\`net/\`, \`AdditionalDeps/\`, \`linux-<arch>/\`, plus \`instrument.sh\` and legal files). Point \`OTEL_DOTNET_AUTO_HOME\` at the extracted directory. See the [README](https://github.com/${{ github.repository }}#consuming-a-release) for setup.
+          Each archive extracts to the upstream \`bin/tracer-home\` layout (\`net/\`, \`AdditionalDeps/\`, \`linux-<arch>/\` or \`linux-musl-<arch>/\`, plus \`instrument.sh\` and legal files). Point \`OTEL_DOTNET_AUTO_HOME\` at the extracted directory. See the [README](https://github.com/${{ github.repository }}#consuming-a-release) for setup.
           EOF
 
       - name: Create Release

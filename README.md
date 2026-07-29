@@ -33,8 +33,13 @@ build, and publish signed release tarballs.
 
 ## Requirements
 
-- **Linux** on **x86_64** or **aarch64** (glibc ≥ 2.23; both native
-  libraries are built inside Ubuntu 16.04 containers).
+- **Linux** on **x86_64** or **aarch64**. Pick the archive that matches the
+  target container's libc:
+  - **glibc ≥ 2.23** — the `linux-x64` and `linux-arm64` archives. Native
+    code is built inside Ubuntu 16.04 containers.
+  - **musl ≥ 1.2** — the `linux-musl-x64` and `linux-musl-arm64` archives.
+    Built inside Alpine 3.20 (musl 1.2.5). Use these for Alpine-based
+    .NET images.
 - **.NET** runtime **6.0 – 9.0**. The upstream instrumentation supports .NET
   Framework as well, but this distribution ships Linux-only archives and
   does not include the Windows-only `netfx/` subtree.
@@ -42,12 +47,18 @@ build, and publish signed release tarballs.
 ## Installation
 
 Download and extract a release archive. Replace `<tag>` with the target
-release (e.g. `v0.1.0`) and `<arch>` with `x64` or `arm64`:
+release (e.g. `v0.1.0`) and pick the archive that matches the target
+container's libc and architecture:
+
+- `dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz`
+- `dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz`
+- `dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz`
+- `dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz`
 
 ```sh
 mkdir -p /opt/dash0/otel-dotnet-auto
 curl -fsSL \
-  https://github.com/dash0hq/opentelemetry-dotnet-distribution/releases/download/<tag>/dash0-opentelemetry-dotnet-instrumentation-linux-<arch>.tar.gz \
+  https://github.com/dash0hq/opentelemetry-dotnet-distribution/releases/download/<tag>/<archive> \
   | tar -xz -C /opt/dash0/otel-dotnet-auto
 
 export OTEL_DOTNET_AUTO_HOME=/opt/dash0/otel-dotnet-auto
@@ -57,11 +68,11 @@ export OTEL_DOTNET_AUTO_HOME=/opt/dash0/otel-dotnet-auto
 Each archive extracts to:
 
 ```
-net/                          # net6.0 – net9.0 managed assemblies + StartupHook + Loader
-AdditionalDeps/               # deps.json overrides per .NET version
-linux-<arch>/                 # OpenTelemetry.AutoInstrumentation.Native.so
+net/                                    # net6.0 – net9.0 managed assemblies + StartupHook + Loader
+AdditionalDeps/                         # deps.json overrides per .NET version
+linux-<arch>/ or linux-musl-<arch>/     # OpenTelemetry.AutoInstrumentation.Native.so
 integrations.json
-instrument.sh                 # sets CoreCLR profiler env vars
+instrument.sh                           # sets CoreCLR profiler env vars
 LICENSE, NOTICE
 ```
 
