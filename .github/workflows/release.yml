@@ -516,4 +516,6 @@ jobs:
             --notes-file release-notes.md \
             "${args[@]}" \
             dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz \
-            dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
+            dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz \
+            dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz \
+            dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz
