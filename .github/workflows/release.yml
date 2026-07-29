@@ -143,9 +143,8 @@ jobs:
         run: |
           set -euo pipefail
           out="dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz"
-          # Include net, netfx, linux-x64 and installation-scripts; drop other RIDs to keep the archive lean.
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" \
-            net netfx linux-x64
+          ls -la bin/tracer-home
+          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
 
       - name: Upload release asset
@@ -186,8 +185,8 @@ jobs:
         run: |
           set -euo pipefail
           out="dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz"
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" \
-            net netfx linux-arm64
+          ls -la bin/tracer-home
+          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
 
       - name: Upload release asset

@@ -45,5 +45,6 @@ tar -xzf dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz -C /opt/das
 export OTEL_DOTNET_AUTO_HOME=/opt/dash0/otel-dotnet-auto
 ```
 
-The archive contains `net/`, `netfx/`, and `linux-<arch>/` — the same layout upstream
-produces under `bin/tracer-home/`.
+The archive contains the same layout upstream produces under `bin/tracer-home/`:
+`net/`, `AdditionalDeps/`, `linux-<arch>/`, plus `instrument.sh` and legal files.
+(`netfx/` is Windows-only and is not included in these Linux archives.)
