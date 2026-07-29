@@ -54,14 +54,25 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Patch ubuntu1604.dockerfile (strip stale dotnet-install.sh SHA check)
+      - name: Patch ubuntu1604.dockerfile
         run: |
           set -euo pipefail
-          # Upstream pins a SHA256 for dotnet-install.sh that no longer matches
-          # Microsoft's current script. The script is fetched over HTTPS from
-          # dot.net, so TLS covers transport integrity; drop the stale check.
+          # 1. Strip the stale SHA check for dotnet-install.sh — upstream pins
+          #    a SHA that no longer matches Microsoft's current script. TLS
+          #    from dot.net covers transport integrity.
           sed -i '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
-          echo "--- patched dockerfile (dotnet-install block) ---"
+          # 2. Fix the kitware cmake repo signed-by mismatch. The RUN writes
+          #    the kitware GPG key to /etc/apt/trusted.gpg.d/kitware.gpg but
+          #    the sources.list restricts trust to a non-existent
+          #    /usr/share/keyrings/kitware-archive-keyring.gpg. Result: apt
+          #    can't verify the kitware repo, silently keeps Ubuntu 16.04's
+          #    cmake 3.5.1, and the tracer's CMakeLists (requires >=3.10)
+          #    fails. Switch that restriction to [trusted=yes]; the key is
+          #    already trusted globally via /etc/apt/trusted.gpg.d/.
+          sed -i 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
+          echo "--- kitware source line ---"
+          grep -n "apt.kitware.com" ./docker/ubuntu1604.dockerfile || true
+          echo "--- dotnet-install block ---"
           grep -n -A1 -B1 dotnet-install ./docker/ubuntu1604.dockerfile || true
 
       - name: Build native library in Ubuntu 16.04 container
