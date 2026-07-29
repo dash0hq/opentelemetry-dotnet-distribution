@@ -256,12 +256,17 @@ jobs:
           # Replace the clang install. apt.llvm.org/xenial has no arm64
           # packages, and Ubuntu 16.04 xenial arm64 only ships clang <= 3.9
           # (insufficient for the tracer's -std=c++17). Install LLVM 8.0.1's
-          # prebuilt aarch64 tarball instead — LLVM builds those on Ubuntu
-          # 16.04, so they run against glibc 2.23. The tracer's CMakeLists
+          # prebuilt aarch64 tarball instead. The tracer's CMakeLists
           # locates clang/clang++ via find_program and uses them as
           # CMAKE_C_COMPILER / CMAKE_CXX_COMPILER.
+          #
+          # LLVM 8's clang binary requires GLIBCXX_3.4.22 (from GCC 5.3+
+          # libstdc++), which Ubuntu 16.04's default libstdc++ predates.
+          # The dockerfile installs g++-9 from ubuntu-toolchain-r/test,
+          # which pulls a newer libstdc++6 satisfying that requirement, so
+          # LLVM is installed AFTER the g++-9 block, not before.
           sed -i '/^# Install newer clang$/,/update-alternatives --config clang++$/d' ./docker/ubuntu1604.dockerfile
-          awk '/^COPY cacert.pem \/etc\/ssl\/certs\/ca-certificates.crt$/ {
+          awk '/update-alternatives --install \/usr\/bin\/gcc gcc \/usr\/bin\/gcc-9/ {
             print
             print ""
             print "# Install clang from LLVM GitHub releases (workflow patch for arm64)"
