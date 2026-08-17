@@ -290,19 +290,14 @@ jobs:
           { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
           mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
 
-          # cmake tarball override — aarch64 variant
-          awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {
-            print
-            print ""
-            print "# Override cmake with static Linux build from Kitware GitHub (workflow patch)"
-            print "RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.9/cmake-3.29.9-linux-aarch64.tar.gz \\"
-            print "    | tar -xz -C /usr/local --strip-components=1 \\"
-            print "    && ln -sf /usr/local/bin/cmake /usr/bin/cmake \\"
-            print "    && cmake --version"
-            next
-          }
-          { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
-          mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
+          # cmake arch fix — the base dockerfile's cmake install RUN block
+          # hardcodes the x86_64 installer regardless of target arch. On the
+          # arm64 build that silently installs an x86_64 cmake binary into
+          # /usr/local/bin, which then fails at runtime with "Exec format
+          # error". Swap the installer filename for the aarch64 build. (Its
+          # sha256sum check line is already stripped above, along with the
+          # dotnet-install.sh one, since both match /sha256sum -c/.)
+          sed -i 's|cmake-${CMAKE_VERSION}-linux-x86_64.sh|cmake-${CMAKE_VERSION}-linux-aarch64.sh|' ./docker/ubuntu1604.dockerfile
           echo "--- patched ubuntu1604.dockerfile (arm64) ---"
           cat ./docker/ubuntu1604.dockerfile
 
@@ -408,14 +403,17 @@ jobs:
         run: |
           set -euo pipefail
           # 1. Strip the stale SHA check for dotnet-install.sh (same issue as
-          #    ubuntu1604.dockerfile — Microsoft rotated the script).
+          #    ubuntu1604.dockerfile — Microsoft rotated the script). No-op
+          #    now that dotnet-install.sh is vendored via COPY instead of
+          #    curled, but harmless to keep in case that regresses.
           sed -i '/sha256sum -c/d' ./docker/alpine.dockerfile
-          # 2. Remove apk exact-version pins (e.g. clang=17.0.6-r1). Alpine
-          #    3.20's apk repos drift as patch versions are superseded, and
-          #    exact pins that miss cause "unable to select packages" errors.
-          #    Only strip patterns that look like =X.Y[.Z]-rN — leave
-          #    ENV=value assignments alone.
-          sed -i 's/=[0-9][0-9.]*-r[0-9]*//g' ./docker/alpine.dockerfile
+          # Previously stripped apk exact-version pins here (e.g.
+          # clang=17.0.6-r1) because Alpine 3.20's apk repos drifted past
+          # them. Dropped: upstream's Dockerfile now declares those versions
+          # as ARG ... =X.Y.Z-rN defaults consumed via clang21="${VAR}", and
+          # the same blind regex was stripping the ARG defaults themselves,
+          # leaving e.g. clang21="" and failing apk with "not a valid world
+          # dependency".
           echo "--- patched alpine.dockerfile ---"
           cat ./docker/alpine.dockerfile
 
