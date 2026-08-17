@@ -106,7 +106,7 @@ jobs:
           #    trust some modern TLS certs; keep this so all HTTPS-using
           #    RUNs (kitware, dot.net, etc.) have a modern trust store.
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
-          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
           # 4. Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test`. That
           #    command calls api.launchpad.net at build time and is
           #    intermittently flaky from GitHub-Actions IP ranges even with
@@ -140,7 +140,7 @@ jobs:
       - name: Build native library in Ubuntu 16.04 container
         run: |
           set -euo pipefail
-          docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile ./docker
+          docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
           docker run -e OS_TYPE=linux-glibc --rm \
             --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
             dash0-native-build \
@@ -254,7 +254,7 @@ jobs:
 
           # CA-bundle refresh
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
-          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+          sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
 
           # Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test` — the
           # Launchpad API call is intermittently flaky from GitHub-Actions
@@ -309,7 +309,7 @@ jobs:
       - name: Build native library in Ubuntu 16.04 container
         run: |
           set -euo pipefail
-          docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile ./docker
+          docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
           docker run -e OS_TYPE=linux-glibc --rm \
             --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
             dash0-native-build \
@@ -422,7 +422,7 @@ jobs:
       - name: Build tracer-home in alpine container
         run: |
           set -euo pipefail
-          docker build -t dash0-alpine-build -f ./docker/alpine.dockerfile ./docker
+          docker build -t dash0-alpine-build -f ./docker/alpine.dockerfile .
           docker run -e OS_TYPE=linux-musl --rm \
             --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
             dash0-alpine-build \
