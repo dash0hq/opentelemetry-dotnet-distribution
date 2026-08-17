@@ -86,6 +86,15 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Fetch upstream release tags for MinVer
+        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
+        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
+        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
+        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
+        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
+        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
       - name: Patch ubuntu1604.dockerfile
         run: |
           set -euo pipefail
@@ -168,6 +177,15 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Fetch upstream release tags for MinVer
+        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
+        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
+        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
+        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
+        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
+        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
@@ -230,6 +248,15 @@ jobs:
           ref: ${{ needs.resolve-upstream.outputs.sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
+
+      - name: Fetch upstream release tags for MinVer
+        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
+        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
+        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
+        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
+        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
+        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Patch ubuntu1604.dockerfile for arm64
         run: |
@@ -332,6 +359,15 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Fetch upstream release tags for MinVer
+        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
+        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
+        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
+        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
+        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
+        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
@@ -398,6 +434,15 @@ jobs:
           ref: ${{ needs.resolve-upstream.outputs.sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
+
+      - name: Fetch upstream release tags for MinVer
+        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
+        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
+        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
+        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
+        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
+        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Patch alpine.dockerfile
         run: |
