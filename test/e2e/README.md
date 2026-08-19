@@ -81,6 +81,7 @@ a re-pull for the correct platform.
 | `rediscache`         | `redis-cache`                  | net6.0 | StackExchange.Redis (client spans against a real Redis backing container) |
 | `runtimemetrics`     | `aspnetcore-httpclient` (reused) | net6.0 | Runtime + Process metrics (`process.runtime.dotnet.*`, `process.cpu.time`, ...) |
 | `efcore`             | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
+| `efcorenet8`         | `efcore-postgres-net8`         | net8.0 | Same, on net8.0 — **currently fails too**, and confirmed to fail identically against a real upstream open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0 build (see below) |
 | `quartz`             | `quartz-job`                   | net6.0 | Quartz (scheduled job execution spans)                                  |
 | `grpc`               | `grpc-client`                  | net6.0 | Grpc.Net.Client (self-hosted gRPC service + client call)                |
 
@@ -137,6 +138,21 @@ EF-Core-issued (batched) commands are silently dropped.
 today, on any .NET/Npgsql version combination, until either Npgsql adds
 ActivitySource tracing to `NpgsqlBatch`, or the suppression is corrected to
 not defer to a source that will never fire.
+
+**Confirmed upstream, not a Dash0-fork issue.** `efcorenet8` runs the exact
+same scenario on net8.0 (EF Core 8, `Npgsql.EntityFrameworkCore.PostgreSQL`
+8.0.11) against a real, unmodified upstream release —
+`opentelemetry-dotnet-instrumentation-linux-glibc-arm64.zip` from
+[open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0](https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/tag/v1.16.0)
+— by pointing `DASH0_E2E_TRACER_HOME` at its extracted contents instead of
+the Dash0 distro. It fails identically: the exact same "Configured
+EntityFrameworkCore instrumentation to skip Npgsql provider because Npgsql
+instrumentation is enabled" log line appears, and no client span arrives.
+On net8.0 with the version-matched upstream build, bug #1
+(AspNetCoreInitializer) does *not* reproduce (no version-mismatch error in
+the logs), cleanly isolating this run to bug #2 alone. This is a genuine
+upstream OpenTelemetry .NET / Npgsql gap, not something introduced by this
+distribution's packaging or the net6.0/net7.0 version pin.
 
 ## Adding a scenario
 
