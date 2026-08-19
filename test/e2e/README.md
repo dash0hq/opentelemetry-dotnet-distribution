@@ -154,6 +154,28 @@ the logs), cleanly isolating this run to bug #2 alone. This is a genuine
 upstream OpenTelemetry .NET / Npgsql gap, not something introduced by this
 distribution's packaging or the net6.0/net7.0 version pin.
 
+**Existing upstream issue: [npgsql/npgsql#5660](https://github.com/npgsql/npgsql/issues/5660)
+("Sending SQL from NpgsqlBatch to OpenTelemetry"), fixed by
+[npgsql/npgsql#5706](https://github.com/npgsql/npgsql/pull/5706).** That
+issue and this one are the same underlying mechanism — `NpgsqlBatch`'s
+internally-wrapped `NpgsqlCommand` has a null `CommandText`, which is what
+`NpgsqlActivitySource.CommandStart` uses to build the span — but the fix
+was **only released starting in Npgsql 9.0.0** (confirmed via
+`git merge-base --is-ancestor` against the npgsql/npgsql repo: present in
+v9.0.0/v9.0.1, absent in v8.0.3 through v8.0.11). It was never backported to
+the 8.x line. Since `Npgsql.EntityFrameworkCore.PostgreSQL` 8.0.11 (EF
+Core 8's official provider, the newest usable on net8.0) pins Npgsql to
+8.0.6, net8.0/EF-Core-8 apps are structurally stuck without the fix — and
+forcibly overriding the transitive pin to Npgsql 9.0.1 doesn't help either:
+it makes the app crash outright (`DbContext.EnsureCreatedAsync` throws a DI
+resolution error), confirming EF Core 8's provider isn't runtime-compatible
+with Npgsql 9.x. So no combination of currently-released packages on
+net8.0 can get this fix. No existing issue found specifically about
+`OpenTelemetry.Instrumentation.EntityFrameworkCore`'s suppression logic
+deferring to a source that (for net8.0/EF Core 8, and for net6.0/net7.0
+regardless of version) never fires — worth filing against
+`open-telemetry/opentelemetry-dotnet-instrumentation`.
+
 ## Adding a scenario
 
 1. Add (or reuse) an example app under `../../examples`.
