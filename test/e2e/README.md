@@ -73,18 +73,46 @@ a re-pull for the correct platform.
 
 ## Scenarios
 
-| Package            | Example app                       | TFM  | Instrumentation exercised                  |
-| ------------------ | ---------------------------------- | ---- | ------------------------------------------- |
-| `aspnetcore`        | `aspnetcore-httpclient`            | net6.0 | ASP.NET Core (server) + HttpClient (client) |
-| `aspnetcorenet8`    | `aspnetcore-httpclient-net8`       | net8.0 | Same, twin scenario for the net8.0+ pin path |
-| `sqlclient`         | `sqlclient-postgres`               | net6.0 | Npgsql (ADO.NET client spans against a real Postgres backing container) |
-| `rediscache`        | `redis-cache`                      | net6.0 | StackExchange.Redis (client spans against a real Redis backing container) |
+| Package            | Example app                  | TFM    | Instrumentation exercised                                                |
+| ------------------- | ----------------------------- | ------ | ------------------------------------------------------------------------- |
+| `aspnetcore`         | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client)                              |
+| `aspnetcorenet8`     | `aspnetcore-httpclient-net8`   | net8.0 | Same, twin scenario for the net8.0+ pin path                             |
+| `sqlclient`          | `sqlclient-postgres`           | net6.0 | Npgsql (ADO.NET client spans against a real Postgres backing container)  |
+| `rediscache`         | `redis-cache`                  | net6.0 | StackExchange.Redis (client spans against a real Redis backing container) |
+| `runtimemetrics`     | `aspnetcore-httpclient` (reused) | net6.0 | Runtime + Process metrics (`process.runtime.dotnet.*`, `process.cpu.time`, ...) |
+| `efcore`             | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
+| `quartz`             | `quartz-job`                   | net6.0 | Quartz (scheduled job execution spans)                                  |
+| `grpc`               | `grpc-client`                  | net6.0 | Grpc.Net.Client (self-hosted gRPC service + client call)                |
 
 A caveat worth knowing before writing new assertions: Npgsql's and
 StackExchange.Redis's own instrumentation both still tag spans with the
 older `db.system` attribute key, not the newer `db.system.name` — check the
 actual span (e.g. by temporarily logging `sv.Span.GetAttributes()`) rather
 than assuming a semconv version.
+
+### Known failure: `efcore`
+
+`TestEntityFrameworkCorePostgres` is a real, currently-failing regression
+test, not a mistake — left red deliberately rather than adjusted to match
+broken behavior. On net6.0, with both ASP.NET Core hosting and EF Core
+active in the same process, `AspNetCoreInitializer` throws:
+
+```
+System.IO.FileNotFoundException: Could not load file or assembly
+'OpenTelemetry.Instrumentation.AspNetCore, Version=1.16.0.1140, ...'
+```
+
+even though the net6.0 tracer-home folder correctly ships the pinned
+1.9.0.42 build (verified directly from the assembly's own metadata). The
+resolver's version-safety check
+(`AssemblyResolver.Net.cs`: `assemblyVersion < assemblyName.Version`)
+rejects it because *something* requests version 1.16.0.1140 specifically —
+matching the net8.0 folder's build — instead of an unversioned lookup. No
+client span (from EF Core or the underlying Npgsql native ActivitySource)
+is produced either. This does not reproduce in `sqlclient`/`rediscache`/
+`quartz`/`grpc`, which also combine ASP.NET Core hosting with another
+instrumentation successfully — so it isn't simply "AspNetCore plus
+anything else breaks." Root cause not yet fully isolated.
 
 ## Adding a scenario
 
