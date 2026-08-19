@@ -56,6 +56,14 @@ type AppScenario struct {
 	// WaitPath is an HTTP path on ExposedPort that returns 2xx once the app
 	// is ready.
 	WaitPath string
+	// Networks are Docker network names to join, for scenarios with a
+	// backing service (see StartBackingService) the app needs to reach by
+	// its network alias.
+	Networks []string
+	// NetworkAliases are the app container's own aliases on each of
+	// Networks, keyed by network name. Usually unneeded — the app is the
+	// caller, not something a backing service needs to resolve by name.
+	NetworkAliases map[string][]string
 }
 
 // StartInstrumentedApp builds and starts scenario's app container with the
@@ -84,6 +92,8 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 		ExposedPorts:    []string{scenario.ExposedPort},
 		Env:             sink.Env(),
 		HostAccessPorts: sink.HostAccessPorts(),
+		Networks:        scenario.Networks,
+		NetworkAliases:  scenario.NetworkAliases,
 		WaitingFor:      wait.ForHTTP(scenario.WaitPath).WithPort(scenario.ExposedPort).WithStartupTimeout(2 * time.Minute),
 	}
 

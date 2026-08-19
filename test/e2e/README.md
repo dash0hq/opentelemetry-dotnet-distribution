@@ -62,12 +62,29 @@ a re-pull for the correct platform.
 - `otelsink/` — an in-process OTLP sink, copied from
   `open-telemetry/opentelemetry-packaging`'s `testutil/otelsink` (see
   `NOTICE`). Not modified beyond the import path.
-- `harness/` — resolves the tracer-home under test (`TracerHome`) and builds
-  and starts scenario containers wired to a sink (`StartInstrumentedApp`).
+- `harness/` — resolves the tracer-home under test (`TracerHome`), builds and
+  starts scenario containers wired to a sink (`StartInstrumentedApp`), and
+  starts plain backing-service containers for scenarios with a dependency
+  (`StartBackingService`, `NewNetwork`).
 - `testdata/<scenario>/` — each scenario's `Dockerfile` (layers the injector
   and tracer-home onto an example app) and any files it `COPY`s in (e.g.
   `injector.conf`).
 - `<scenario>/` (e.g. `aspnetcore/`) — the actual test files.
+
+## Scenarios
+
+| Package            | Example app                       | TFM  | Instrumentation exercised                  |
+| ------------------ | ---------------------------------- | ---- | ------------------------------------------- |
+| `aspnetcore`        | `aspnetcore-httpclient`            | net6.0 | ASP.NET Core (server) + HttpClient (client) |
+| `aspnetcorenet8`    | `aspnetcore-httpclient-net8`       | net8.0 | Same, twin scenario for the net8.0+ pin path |
+| `sqlclient`         | `sqlclient-postgres`               | net6.0 | Npgsql (ADO.NET client spans against a real Postgres backing container) |
+| `rediscache`        | `redis-cache`                      | net6.0 | StackExchange.Redis (client spans against a real Redis backing container) |
+
+A caveat worth knowing before writing new assertions: Npgsql's and
+StackExchange.Redis's own instrumentation both still tag spans with the
+older `db.system` attribute key, not the newer `db.system.name` — check the
+actual span (e.g. by temporarily logging `sv.Span.GetAttributes()`) rather
+than assuming a semconv version.
 
 ## Adding a scenario
 
@@ -79,5 +96,10 @@ a re-pull for the correct platform.
    flavor side by side under one path-prefix directory, which is what the
    injector's `dotnet_auto_instrumentation_agent_path_prefix` expects to
    find `glibc/linux-<arch>/...` or `musl/linux-<arch>/...` under).
-3. Write the test using `harness.StartInstrumentedApp` and `otelsink`'s
+3. If the app needs a backing service (database, cache, ...), create a
+   shared network with `harness.NewNetwork` and start the dependency with
+   `harness.StartBackingService`, aliased to whatever hostname the app's own
+   connection-string default expects (see `sqlclient/sqlclient_test.go` for
+   the pattern) — pass the same network name in `AppScenario.Networks`.
+4. Write the test using `harness.StartInstrumentedApp` and `otelsink`'s
    query/wait helpers — see `aspnetcore/aspnetcore_test.go`.
