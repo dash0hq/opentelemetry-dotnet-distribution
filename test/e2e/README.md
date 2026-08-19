@@ -94,8 +94,11 @@ than assuming a semconv version.
 
 `TestEntityFrameworkCorePostgres` is a real, currently-failing regression
 test, not a mistake — left red deliberately rather than adjusted to match
-broken behavior. On net6.0, with both ASP.NET Core hosting and EF Core
-active in the same process, `AspNetCoreInitializer` throws:
+broken behavior. Two independent, fully root-caused bugs:
+
+**1. AspNetCoreInitializer version mismatch (separate, unresolved).** On
+net6.0, with both ASP.NET Core hosting and EF Core active in the same
+process, it throws:
 
 ```
 System.IO.FileNotFoundException: Could not load file or assembly
@@ -107,12 +110,33 @@ even though the net6.0 tracer-home folder correctly ships the pinned
 resolver's version-safety check
 (`AssemblyResolver.Net.cs`: `assemblyVersion < assemblyName.Version`)
 rejects it because *something* requests version 1.16.0.1140 specifically —
-matching the net8.0 folder's build — instead of an unversioned lookup. No
-client span (from EF Core or the underlying Npgsql native ActivitySource)
-is produced either. This does not reproduce in `sqlclient`/`rediscache`/
-`quartz`/`grpc`, which also combine ASP.NET Core hosting with another
-instrumentation successfully — so it isn't simply "AspNetCore plus
-anything else breaks." Root cause not yet fully isolated.
+matching the net8.0 folder's build — instead of an unversioned lookup. This
+does not reproduce in `sqlclient`/`rediscache`/`quartz`/`grpc`, which also
+combine ASP.NET Core hosting with another instrumentation successfully. Each
+initializer failure is isolated (see `LazyInstrumentationLoader.cs`), so
+this failure alone does not explain #2.
+
+**2. Why no database span ever appears (root-caused; not specific to any
+.NET or Npgsql version).** `EntityFrameworkCoreInitializer` deliberately
+suppresses EF Core's own span for the Npgsql provider ("Configured
+EntityFrameworkCore instrumentation to skip Npgsql provider because Npgsql
+instrumentation is enabled"), assuming Npgsql's own native ActivitySource
+tracing (`TracerInstrumentation.Npgsql => builder.AddSource("Npgsql")`) will
+cover EF-Core-issued commands instead. It never does:
+`NpgsqlActivitySource.CommandStart` is only called from `NpgsqlCommand`'s
+own execution path; EF Core's Npgsql provider executes commands via
+`NpgsqlBatch`, which has **never** called into `NpgsqlActivitySource` at
+all — confirmed absent in Npgsql source at v7.0.7 (the newest version
+resolvable for a net6.0/net7.0 app, since EF Core 8's Npgsql provider
+requires net8.0), v8.0.0, and v9.0.0. A manually-added raw `NpgsqlCommand`
+query in the same request, alongside the EF Core call, *did* produce a
+span — confirming Npgsql tracing itself works fine in-process; only
+EF-Core-issued (batched) commands are silently dropped.
+
+**Net effect:** EntityFrameworkCore + Npgsql produces zero database spans
+today, on any .NET/Npgsql version combination, until either Npgsql adds
+ActivitySource tracing to `NpgsqlBatch`, or the suppression is corrected to
+not defer to a source that will never fire.
 
 ## Adding a scenario
 
