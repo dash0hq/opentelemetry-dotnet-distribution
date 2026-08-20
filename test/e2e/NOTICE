@@ -1,0 +1,8 @@
+This module includes software from the following third-party projects:
+
+- otelsink/ (sink.go, query.go, wait.go, sink_test.go)
+  Copied from testutil/otelsink in open-telemetry/opentelemetry-packaging
+  (https://github.com/open-telemetry/opentelemetry-packaging),
+  Copyright The OpenTelemetry Authors, licensed under the Apache License,
+  Version 2.0. Only the import path in sink_test.go was changed to match
+  this module.

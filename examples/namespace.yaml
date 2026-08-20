@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dash0-dotnet-examples
+---
+apiVersion: operator.dash0.com/v1beta1
+kind: Dash0Monitoring
+metadata:
+  name: dash0-monitoring-resource
+  namespace: dash0-dotnet-examples
+spec:
+  instrumentWorkloads:
+    mode: all
+  logCollection:
+    enabled: true

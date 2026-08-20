@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: efcore-postgres
+  namespace: dash0-dotnet-examples
+  labels:
+    app: efcore-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: efcore-postgres
+  template:
+    metadata:
+      labels:
+        app: efcore-postgres
+    spec:
+      containers:
+        - name: efcore-postgres
+          image: localhost:5001/dash0-dotnet-example-efcore-postgres:latest
+          imagePullPolicy: Always
+          env:
+            - name: POSTGRES_CONNECTION_STRING
+              # Reuses the postgres Service already deployed by
+              # sqlclient-postgres/k8s/postgres.yaml.
+              value: "Host=postgres;Port=5432;Username=postgres;Password=postgres;Database=postgres"
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: efcore-postgres
+  namespace: dash0-dotnet-examples
+spec:
+  selector:
+    app: efcore-postgres
+  ports:
+    - port: 8080
+      targetPort: 8080
