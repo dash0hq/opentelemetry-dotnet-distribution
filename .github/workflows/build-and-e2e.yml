@@ -144,25 +144,32 @@ jobs:
       - name: Pin the SDK ./build.sh runs under
         # The checked-out commit (from .upstream-ref) has no global.json, so
         # without a pin `dotnet` resolves to the highest SDK it finds on the
-        # runner -- including whatever GitHub preinstalls, independent of
-        # what this workflow explicitly installs below. That's not just a
-        # "wrong SDK" problem: build/_build.csproj and
+        # runner. build/_build.csproj and
         # tools/DependencyListGenerator/DependencyListGenerator.csproj both
         # target net10.0 (falling back to net9.0 only when the MSBuild
         # property IsLegacyUbuntu is set -- which is for the Ubuntu 16.04
         # native-build container, not this runner), so the build driver
-        # itself genuinely needs a .NET 10 SDK to run at all. What broke was
-        # relying on whichever .NET 10 SDK the runner happens to have
-        # preinstalled: MSBuild loaded that ambient SDK's NuGet.Frameworks
-        # against Nuke's own reference to a different one and threw a
-        # manifest-mismatch InvalidProjectFileException. Pin to the .NET 10
-        # SDK installed explicitly below instead of the ambient one.
+        # itself genuinely needs some .NET 10 SDK to run.
+        #
+        # It can't be just any .NET 10 SDK, though: 10.0.400 specifically
+        # throws Microsoft.Build.Exceptions.InvalidProjectFileException
+        # ("Could not load file or assembly 'NuGet.Frameworks, Version=
+        # 7.9.0.0' ... manifest definition does not match") from Nuke's
+        # in-process ProjectModelTasks.ParseProject call (TransientDepen-
+        # denciesGenerator) -- confirmed to reproduce identically whether
+        # 10.0.400 is the runner's ambient preinstalled SDK or one freshly
+        # installed by actions/setup-dotnet just below, so this is a
+        # version-specific SDK/Nuke incompatibility, not an install-
+        # provenance issue. Pinned to 10.0.100 (the first stable 10.0
+        # release, GA 2025-11-11) with rollForward: disable to force
+        # exactly that feature band instead of rolling forward into 10.0.400
+        # again.
         run: |
           cat > global.json <<'EOF'
           {
             "sdk": {
               "version": "10.0.100",
-              "rollForward": "latestFeature"
+              "rollForward": "disable"
             }
           }
           EOF
@@ -175,7 +182,7 @@ jobs:
             7.0.410
             8.0.406
             9.0.200
-            10.0.x
+            10.0.100
 
       - name: Build tracer-home
         # Skip the standalone Restore target; it restores the whole solution,
@@ -355,25 +362,32 @@ jobs:
       - name: Pin the SDK ./build.sh runs under
         # The checked-out commit (from .upstream-ref) has no global.json, so
         # without a pin `dotnet` resolves to the highest SDK it finds on the
-        # runner -- including whatever GitHub preinstalls, independent of
-        # what this workflow explicitly installs below. That's not just a
-        # "wrong SDK" problem: build/_build.csproj and
+        # runner. build/_build.csproj and
         # tools/DependencyListGenerator/DependencyListGenerator.csproj both
         # target net10.0 (falling back to net9.0 only when the MSBuild
         # property IsLegacyUbuntu is set -- which is for the Ubuntu 16.04
         # native-build container, not this runner), so the build driver
-        # itself genuinely needs a .NET 10 SDK to run at all. What broke was
-        # relying on whichever .NET 10 SDK the runner happens to have
-        # preinstalled: MSBuild loaded that ambient SDK's NuGet.Frameworks
-        # against Nuke's own reference to a different one and threw a
-        # manifest-mismatch InvalidProjectFileException. Pin to the .NET 10
-        # SDK installed explicitly below instead of the ambient one.
+        # itself genuinely needs some .NET 10 SDK to run.
+        #
+        # It can't be just any .NET 10 SDK, though: 10.0.400 specifically
+        # throws Microsoft.Build.Exceptions.InvalidProjectFileException
+        # ("Could not load file or assembly 'NuGet.Frameworks, Version=
+        # 7.9.0.0' ... manifest definition does not match") from Nuke's
+        # in-process ProjectModelTasks.ParseProject call (TransientDepen-
+        # denciesGenerator) -- confirmed to reproduce identically whether
+        # 10.0.400 is the runner's ambient preinstalled SDK or one freshly
+        # installed by actions/setup-dotnet just below, so this is a
+        # version-specific SDK/Nuke incompatibility, not an install-
+        # provenance issue. Pinned to 10.0.100 (the first stable 10.0
+        # release, GA 2025-11-11) with rollForward: disable to force
+        # exactly that feature band instead of rolling forward into 10.0.400
+        # again.
         run: |
           cat > global.json <<'EOF'
           {
             "sdk": {
               "version": "10.0.100",
-              "rollForward": "latestFeature"
+              "rollForward": "disable"
             }
           }
           EOF
@@ -386,7 +400,7 @@ jobs:
             7.0.410
             8.0.406
             9.0.200
-            10.0.x
+            10.0.100
 
       - name: Build tracer-home
         run: ./build.sh BuildTracer
