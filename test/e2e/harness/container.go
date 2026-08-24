@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -76,6 +77,20 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 	tracerHome := TracerHome(t)
 	buildContext := stageBuildContext(t, root, scenario, tracerHome)
 
+	env := map[string]string{
+		// The .NET tracer's own diagnostic logs default to a file inside
+		// the container (OTEL_DOTNET_AUTO_LOGGER default: "file"), which
+		// this harness never extracts -- so an instrumentation-side
+		// failure (e.g. an initializer exception) is invisible even with
+		// the container's own stdout/stderr captured on failure. Route it
+		// to console instead, at debug verbosity, so it lands in the log
+		// capture in the same place as the app's own output and the
+		// injector's debug log.
+		"OTEL_DOTNET_AUTO_LOGGER": "console",
+		"OTEL_LOG_LEVEL":          "debug",
+	}
+	maps.Copy(env, sink.Env())
+
 	injectorArch := buildArch
 	req := testcontainers.ContainerRequest{
 		FromDockerfile: testcontainers.FromDockerfile{
@@ -90,7 +105,7 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 		},
 		ImagePlatform:   "linux/" + buildArch,
 		ExposedPorts:    []string{scenario.ExposedPort},
-		Env:             sink.Env(),
+		Env:             env,
 		HostAccessPorts: sink.HostAccessPorts(),
 		Networks:        scenario.Networks,
 		NetworkAliases:  scenario.NetworkAliases,
