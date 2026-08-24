@@ -64,6 +64,11 @@ import (
 )
 
 func TestEntityFrameworkCorePostgres(t *testing.T) {
+	t.Skip("known upstream bug, not a regression -- see the package doc above and " +
+		"test/e2e/README.md's \"Known failure: efcore\" section. Unskip to check " +
+		"whether Npgsql has added NpgsqlBatch tracing or the EF Core suppression " +
+		"logic has been fixed.")
+
 	sink := otelsink.Start(t)
 	ctx := context.Background()
 
