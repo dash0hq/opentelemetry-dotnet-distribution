@@ -223,6 +223,9 @@ jobs:
         run: |
           set -euo pipefail
           out="dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz"
+          # Debug symbols for the native profiler aren't needed at runtime
+          # and are ~8x the size of the .so itself (see issue #2).
+          find bin/tracer-home -name '*.so.debug' -print -delete
           ls -la bin/tracer-home
           tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
@@ -401,6 +404,9 @@ jobs:
         run: |
           set -euo pipefail
           out="dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz"
+          # Debug symbols for the native profiler aren't needed at runtime
+          # and are ~8x the size of the .so itself (see issue #2).
+          find bin/tracer-home -name '*.so.debug' -print -delete
           ls -la bin/tracer-home
           tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
@@ -475,6 +481,9 @@ jobs:
         run: |
           set -euo pipefail
           out="dash0-opentelemetry-dotnet-instrumentation-linux-musl-${{ matrix.arch }}.tar.gz"
+          # Debug symbols for the native profiler aren't needed at runtime
+          # and are ~8x the size of the .so itself (see issue #2).
+          find bin/tracer-home -name '*.so.debug' -print -delete
           ls -la bin/tracer-home
           tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
           ls -lh "${GITHUB_WORKSPACE}/${out}"
