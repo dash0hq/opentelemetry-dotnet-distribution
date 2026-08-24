@@ -105,6 +105,25 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 	t.Cleanup(func() {
 		_ = container.Terminate(context.Background())
 	})
+	// Registered after the Terminate cleanup above, so it runs first
+	// (t.Cleanup is LIFO) and reads the container's log buffer before the
+	// container itself goes away. Only on failure -- this is the injector's
+	// (OTEL_INJECTOR_LOG_LEVEL=debug) and the app's own stdout/stderr, which
+	// is verbose and only useful when a scenario didn't produce the traces
+	// it was expected to.
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		logs, err := container.Logs(context.Background())
+		if err != nil {
+			t.Logf("could not fetch container logs for %s: %v", scenario.ExampleDir, err)
+			return
+		}
+		defer logs.Close()
+		data, _ := io.ReadAll(logs)
+		t.Logf("--- container logs (%s) ---\n%s\n--- end container logs ---", scenario.ExampleDir, data)
+	})
 
 	return container
 }
