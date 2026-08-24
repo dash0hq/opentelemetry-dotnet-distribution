@@ -1,0 +1,11 @@
+apiVersion: operator.dash0.com/v1alpha1
+kind: Dash0OperatorConfiguration
+metadata:
+  name: dash0-operator-configuration-resource
+spec:
+  exports:
+    - grpc:
+        endpoint: http://otlp-sink.otlp-sink.svc.cluster.local:4317
+        insecure: true
+  selfMonitoring:
+    enabled: false

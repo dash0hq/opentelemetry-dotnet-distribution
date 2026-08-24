@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: dash0-dotnet-examples
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        # Opts this backing service out of Dash0 auto-instrumentation (see dash0.com/enable in the operator's
+        # Dash0Monitoring CRD docs). It's plain infrastructure, not one of the .NET runtimes under test.
+        dash0.com/enable: "false"
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: dash0-dotnet-examples
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

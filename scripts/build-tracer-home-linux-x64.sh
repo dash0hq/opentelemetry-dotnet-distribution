@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Builds a linux-x64 glibc tracer-home from a local checkout of
+# dash0hq/opentelemetry-dotnet-instrumentation, for the E2E test suite's
+# "build once, reuse across tests" dev-loop mode (test/e2e/harness).
+#
+# This intentionally mirrors the build-native-x64 + build-x64 jobs in
+# .github/workflows/release.yml (same Dockerfile patches, same two-step
+# native-then-managed build), so it exercises the same path a real release
+# would take. It is a standalone script rather than a refactor of
+# release.yml, to avoid touching the working release pipeline.
+#
+# Usage:
+#   ./scripts/build-tracer-home-linux-x64.sh [source-dir]
+#
+# source-dir defaults to ../opentelemetry-dotnet-instrumentation (a sibling
+# checkout) or $DASH0_INSTRUMENTATION_SOURCE_DIR. Builds whatever is
+# currently checked out there (including uncommitted changes) — the point
+# of the dev-loop mode is to catch regressions before they're even pushed.
+#
+# Output: <source-dir>/bin/tracer-home, ready to point
+# DASH0_E2E_TRACER_HOME at.
+
+set -euo pipefail
+
+source_dir="${1:-${DASH0_INSTRUMENTATION_SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/../opentelemetry-dotnet-instrumentation}}"
+
+if [ ! -d "${source_dir}/.git" ]; then
+  echo "::error:: ${source_dir} is not a git checkout of opentelemetry-dotnet-instrumentation" >&2
+  exit 1
+fi
+
+cd "${source_dir}"
+echo "Building tracer-home from $(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD) in ${source_dir}"
+
+# MinVer needs a reachable release tag to compute real assembly versions;
+# the dash0hq fork carries none of its own. See release.yml for the full
+# explanation.
+git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
+echo "--- Patching ubuntu1604.dockerfile ---"
+sed -i.bak '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
+sed -i.bak 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
+curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
+sed -i.bak 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (script patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
+sed -i.bak 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
+awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {
+  print
+  print ""
+  print "# Override cmake with static Linux build from Kitware GitHub (script patch)"
+  print "RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.9/cmake-3.29.9-linux-x86_64.tar.gz \\"
+  print "    | tar -xz -C /usr/local --strip-components=1 \\"
+  print "    && ln -sf /usr/local/bin/cmake /usr/bin/cmake \\"
+  print "    && cmake --version"
+  next
+}
+{ print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
+mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
+rm -f ./docker/ubuntu1604.dockerfile.bak
+
+echo "--- Building native library in Ubuntu 16.04 container (linux/amd64) ---"
+# The Dockerfile's patches (clang-5.0 apt package, x86_64 cmake tarball, the
+# base image's amd64 digest pin) are all x64-specific — release.yml's arm64
+# native build uses a different patch set entirely (see build-native-arm64).
+# Force the build/run platform so this also works correctly (under QEMU
+# emulation) from an arm64 dev machine, instead of silently building for the
+# host architecture and pulling in incompatible arm64 packages.
+docker build --platform linux/amd64 -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
+docker run --platform linux/amd64 -e OS_TYPE=linux-glibc --rm \
+  --mount type=bind,source="${source_dir}",target=/project \
+  dash0-native-build \
+  /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
+
+native_so="bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
+test -f "${native_so}"
+cp "${native_so}" /tmp/dash0-e2e-native-x64.so
+
+echo "--- Building managed tracer-home (requires .NET SDKs 6/7/8/9 installed) ---"
+./build.sh BuildTracer
+
+echo "--- Swapping in Ubuntu-16.04-built native library ---"
+rm "${native_so}"
+cp /tmp/dash0-e2e-native-x64.so "${native_so}"
+file "${native_so}"
+
+echo "tracer-home ready at ${source_dir}/bin/tracer-home"
+echo "Point the E2E suite at it with: export DASH0_E2E_TRACER_HOME=${source_dir}/bin/tracer-home"
