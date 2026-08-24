@@ -141,6 +141,27 @@ jobs:
         # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
         run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
+      - name: Pin the SDK ./build.sh runs under
+        # The checked-out commit (from .upstream-ref) has no global.json, so
+        # without a pin `dotnet` resolves to the highest SDK it finds on the
+        # runner -- including whatever GitHub preinstalls, independent of
+        # what this workflow explicitly installs below. That silently broke
+        # this build once a preinstalled .NET 10 SDK started outranking the
+        # pinned 9.0.200: MSBuild loaded .NET 10's NuGet.Frameworks against
+        # Nuke's own reference to an older one and threw a manifest-mismatch
+        # InvalidProjectFileException. Pin explicitly to what's installed
+        # just below, matching what unpinned resolution happened to pick
+        # before a newer SDK showed up on the image.
+        run: |
+          cat > global.json <<'EOF'
+          {
+            "sdk": {
+              "version": "9.0.200",
+              "rollForward": "disable"
+            }
+          }
+          EOF
+
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
@@ -324,6 +345,27 @@ jobs:
         # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
         # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
         run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
+      - name: Pin the SDK ./build.sh runs under
+        # The checked-out commit (from .upstream-ref) has no global.json, so
+        # without a pin `dotnet` resolves to the highest SDK it finds on the
+        # runner -- including whatever GitHub preinstalls, independent of
+        # what this workflow explicitly installs below. That silently broke
+        # this build once a preinstalled .NET 10 SDK started outranking the
+        # pinned 9.0.200: MSBuild loaded .NET 10's NuGet.Frameworks against
+        # Nuke's own reference to an older one and threw a manifest-mismatch
+        # InvalidProjectFileException. Pin explicitly to what's installed
+        # just below, matching what unpinned resolution happened to pick
+        # before a newer SDK showed up on the image.
+        run: |
+          cat > global.json <<'EOF'
+          {
+            "sdk": {
+              "version": "9.0.200",
+              "rollForward": "disable"
+            }
+          }
+          EOF
 
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
