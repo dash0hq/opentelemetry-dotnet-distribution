@@ -487,9 +487,54 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  e2e:
+    name: E2E tests (${{ matrix.arch }})
+    # Release-gate mode from test/e2e/README.md: validate the exact
+    # glibc tarball this pipeline just built, not a from-source rebuild.
+    # Only glibc x64/arm64 are covered, not the musl variants -- the E2E
+    # scenarios don't depend on libc flavor, so this is enough to gate on.
+    needs: [build-x64, build-arm64]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-${{ matrix.arch }} tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-${{ matrix.arch }}
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf "dash0-opentelemetry-dotnet-instrumentation-linux-${{ matrix.arch }}.tar.gz"
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        run: go test -v ./...
+
   release:
     name: Publish GitHub Release
-    needs: [resolve-upstream, build-x64, build-arm64, build-musl]
+    needs: [resolve-upstream, build-x64, build-arm64, build-musl, e2e]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
