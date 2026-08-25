@@ -1,0 +1,39 @@
+name: pr-validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  resolve-upstream-ref:
+    name: Resolve pinned upstream ref
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Read pinned upstream SHA
+        id: resolve
+        run: |
+          set -euo pipefail
+          # Build against whatever SHA this PR's own branch has pinned in
+          # .upstream-ref -- normally unchanged, so this validates the
+          # current pin, but a PR that bumps it validates the new one too.
+          if [ ! -f .upstream-ref ]; then
+            echo "::error::.upstream-ref missing from this branch."
+            exit 1
+          fi
+          sha=$(tr -d ' \t\r\n' < .upstream-ref)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Resolved upstream=${sha}"
+
+  build-and-e2e:
+    name: Build glibc tracer-homes and run E2E gate
+    needs: resolve-upstream-ref
+    uses: ./.github/workflows/build-and-e2e.yml
+    with:
+      upstream_sha: ${{ needs.resolve-upstream-ref.outputs.sha }}
+    secrets: inherit
