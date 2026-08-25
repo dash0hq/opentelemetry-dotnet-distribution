@@ -71,14 +71,19 @@ jobs:
           #    RUNs (kitware, dot.net, etc.) have a modern trust store.
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
           sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
-          # 4. Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test`. That
-          #    command calls api.launchpad.net at build time and is
-          #    intermittently flaky from GitHub-Actions IP ranges even with
-          #    a fresh CA bundle (9-minute TLS timeouts then a nonsense
-          #    "user or team does not exist" error). Write the deb source
-          #    line directly with [trusted=yes]; apt then pulls g++-9 from
-          #    ppa.launchpad.net over HTTP with no cert or API round-trip.
-          sed -i 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
+          # 4. Bypass the ubuntu-toolchain-r keyring fetch. Upstream now
+          #    fetches the signing key from keyserver.ubuntu.com before
+          #    writing the sources.list entry -- an extra network
+          #    round-trip that's intermittently flaky from GitHub-Actions
+          #    IP ranges (observed: sporadic 500s). Drop the curl|gpg RUN
+          #    entirely and switch the sources.list entry to [trusted=yes],
+          #    same fix already applied to kitware's repo above. (Older
+          #    upstream Dockerfiles used `add-apt-repository
+          #    ppa:ubuntu-toolchain-r/test` instead, calling
+          #    api.launchpad.net directly -- if that line ever comes back,
+          #    it needs this same bypass under its own name.)
+          sed -i '/keyserver\.ubuntu\.com\/pks\/lookup/d' ./docker/ubuntu1604.dockerfile
+          sed -i "s|^    echo 'deb \[signed-by=/usr/share/keyrings/ubuntu-toolchain-r-archive-keyring\.gpg\]|RUN echo 'deb [trusted=yes]|" ./docker/ubuntu1604.dockerfile
           # 4. Override cmake with a modern static build from Kitware's GitHub
           #    releases. Xenial ships cmake 3.5.1; the kitware apt repo for
           #    xenial no longer publishes a newer cmake, so upstream's
@@ -274,11 +279,15 @@ jobs:
           curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
           sed -i 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (workflow patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
 
-          # Bypass `add-apt-repository ppa:ubuntu-toolchain-r/test` — the
-          # Launchpad API call is intermittently flaky from GitHub-Actions
-          # IP ranges; write the deb source line directly with [trusted=yes]
-          # so apt fetches g++-9 straight from ppa.launchpad.net.
-          sed -i 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
+          # Bypass the ubuntu-toolchain-r keyring fetch — upstream now
+          # fetches the signing key from keyserver.ubuntu.com before
+          # writing the sources.list entry, an extra network round-trip
+          # that's intermittently flaky from GitHub-Actions IP ranges
+          # (observed: sporadic 500s). Drop the curl|gpg RUN entirely and
+          # switch the sources.list entry to [trusted=yes], same fix
+          # already applied to kitware's repo above.
+          sed -i '/keyserver\.ubuntu\.com\/pks\/lookup/d' ./docker/ubuntu1604.dockerfile
+          sed -i "s|^    echo 'deb \[signed-by=/usr/share/keyrings/ubuntu-toolchain-r-archive-keyring\.gpg\]|RUN echo 'deb [trusted=yes]|" ./docker/ubuntu1604.dockerfile
 
           # Replace the clang install. apt.llvm.org/xenial has no arm64
           # packages, and Ubuntu 16.04 xenial arm64 only ships clang <= 3.9

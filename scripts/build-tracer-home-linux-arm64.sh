@@ -45,7 +45,13 @@ sed -i.bak '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
 sed -i.bak 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
 curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
 sed -i.bak 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (script patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
-sed -i.bak 's|RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y|RUN echo "deb [trusted=yes] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" > /etc/apt/sources.list.d/ubuntu-toolchain-r-test.list|' ./docker/ubuntu1604.dockerfile
+# Bypass the ubuntu-toolchain-r keyring fetch -- upstream now fetches the
+# signing key from keyserver.ubuntu.com before writing the sources.list
+# entry, an extra network round-trip that's intermittently flaky. Drop the
+# curl|gpg RUN entirely and switch the sources.list entry to [trusted=yes],
+# same fix already applied to kitware's repo above.
+sed -i.bak '/keyserver\.ubuntu\.com\/pks\/lookup/d' ./docker/ubuntu1604.dockerfile
+sed -i.bak "s|^    echo 'deb \[signed-by=/usr/share/keyrings/ubuntu-toolchain-r-archive-keyring\.gpg\]|RUN echo 'deb [trusted=yes]|" ./docker/ubuntu1604.dockerfile
 
 # apt.llvm.org/xenial has no arm64 packages, and xenial arm64's own clang is
 # too old (<=3.9, need C++17). Install LLVM 8.0.1's prebuilt aarch64 tarball
