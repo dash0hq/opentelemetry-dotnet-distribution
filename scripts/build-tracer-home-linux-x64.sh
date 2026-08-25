@@ -65,10 +65,20 @@ echo "--- Building native library in Ubuntu 16.04 container (linux/amd64) ---"
 # emulation) from an arm64 dev machine, instead of silently building for the
 # host architecture and pulling in incompatible arm64 packages.
 docker build --platform linux/amd64 -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
+# This container only has .NET SDK 9.0.316 installed, and its ancient glibc
+# cannot run .NET 10 at all. A repo-root global.json (once present) pins the
+# SDK to 10.0.302 for other build paths; global.json has no MSBuild-style
+# conditions, so drop it for this one container-only step instead of letting
+# dotnet try to fetch and run an incompatible SDK (mirrors
+# build-ubuntu1604-native-container.yml's own "rm -f global.json" step
+# upstream). Restored afterward since source_dir is a real working tree,
+# not an ephemeral CI checkout.
+rm -f global.json
 docker run --platform linux/amd64 -e OS_TYPE=linux-glibc --rm \
   --mount type=bind,source="${source_dir}",target=/project \
   dash0-native-build \
   /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
+git checkout -- global.json 2>/dev/null || true
 
 native_so="bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
 test -f "${native_so}"
