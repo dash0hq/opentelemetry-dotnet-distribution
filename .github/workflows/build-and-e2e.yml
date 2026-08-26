@@ -103,6 +103,38 @@ jobs:
           }
           { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
           mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
+          # 5. Replace the clang install. Upstream's own RUN pulls clang-5.0
+          #    from apt.llvm.org's xenial repo, which has repeatedly failed
+          #    to connect from GitHub-Actions IP ranges (both the GPG key
+          #    fetch and the .deb downloads themselves) -- the archive
+          #    itself is reachable from other networks, so this looks like
+          #    flakiness specific to GitHub's runner egress rather than a
+          #    removed/broken package. Install LLVM 8.0.1's prebuilt
+          #    x86_64 tarball from GitHub releases instead, same fix
+          #    already applied to the arm64 native build below (which
+          #    can't use apt.llvm.org at all, since that repo has no arm64
+          #    packages).
+          #
+          #    LLVM 8's clang binary requires GLIBCXX_3.4.22 (from GCC 5.3+
+          #    libstdc++), which Ubuntu 16.04's default libstdc++ predates.
+          #    The dockerfile installs g++-9 from ubuntu-toolchain-r/test,
+          #    which pulls a newer libstdc++6 satisfying that requirement,
+          #    so LLVM is installed AFTER the g++-9 block, not before.
+          sed -i '/^# Install newer clang$/,/update-alternatives --config clang++$/d' ./docker/ubuntu1604.dockerfile
+          awk '/update-alternatives --install \/usr\/bin\/gcc gcc \/usr\/bin\/gcc-9/ {
+            print
+            print ""
+            print "# Install clang from LLVM GitHub releases (workflow patch)"
+            print "RUN mkdir -p /opt/llvm \\"
+            print "    && curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-x86_64-linux-gnu-ubuntu-14.04.tar.xz \\"
+            print "    | tar -xJ -C /opt/llvm --strip-components=1 \\"
+            print "    && ln -sf /opt/llvm/bin/clang /usr/bin/clang \\"
+            print "    && ln -sf /opt/llvm/bin/clang++ /usr/bin/clang++ \\"
+            print "    && clang --version"
+            next
+          }
+          { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
+          mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
           echo "--- patched ubuntu1604.dockerfile ---"
           cat ./docker/ubuntu1604.dockerfile
 
@@ -269,12 +301,11 @@ jobs:
       - name: Patch ubuntu1604.dockerfile for arm64
         run: |
           set -euo pipefail
-          # Same patches as the x64 native build, plus three arm64-specific
-          # adjustments: switch the base to arm64v8/ubuntu:16.04 (the pinned
-          # amd64 digest does not resolve on an arm64 host), drop the
-          # apt.llvm.org clang-5.0 install (that repo has no arm64 packages
-          # and the build actually uses gcc-9 anyway), and use the aarch64
-          # cmake tarball.
+          # Same patches as the x64 native build (including the clang
+          # install replacement -- see its comment below for why), plus two
+          # arm64-specific adjustments: switch the base to
+          # arm64v8/ubuntu:16.04 (the pinned amd64 digest does not resolve
+          # on an arm64 host), and use the aarch64 cmake tarball.
 
           # Base image: arm64 variant (drop the amd64 digest pin)
           sed -i 's|^FROM ubuntu:16.04@sha256:[0-9a-f]*|FROM arm64v8/ubuntu:16.04|' ./docker/ubuntu1604.dockerfile

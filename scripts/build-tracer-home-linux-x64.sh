@@ -61,12 +61,41 @@ awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {
 }
 { print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
 mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
+# Replace the clang install -- upstream's own RUN pulls clang-5.0 from
+# apt.llvm.org's xenial repo, which has repeatedly failed to connect from
+# GitHub-Actions IP ranges (both the GPG key fetch and the .deb downloads
+# themselves); the archive is reachable from other networks, so this is
+# runner-egress flakiness, not a removed/broken package. Install LLVM
+# 8.0.1's prebuilt x86_64 tarball from GitHub releases instead, same fix
+# already applied to the arm64 script below (which can't use apt.llvm.org
+# at all, since that repo has no arm64 packages).
+#
+# LLVM 8's clang binary requires GLIBCXX_3.4.22 (from GCC 5.3+ libstdc++),
+# which Ubuntu 16.04's default libstdc++ predates. The dockerfile installs
+# g++-9 from ubuntu-toolchain-r/test, which pulls a newer libstdc++6
+# satisfying that requirement, so LLVM is installed AFTER the g++-9 block,
+# not before.
+sed -i.bak '/^# Install newer clang$/,/update-alternatives --config clang++$/d' ./docker/ubuntu1604.dockerfile
+awk '/update-alternatives --install \/usr\/bin\/gcc gcc \/usr\/bin\/gcc-9/ {
+  print
+  print ""
+  print "# Install clang from LLVM GitHub releases (script patch)"
+  print "RUN mkdir -p /opt/llvm \\"
+  print "    && curl -fsSL https://github.com/llvm/llvm-project/releases/download/llvmorg-8.0.1/clang+llvm-8.0.1-x86_64-linux-gnu-ubuntu-14.04.tar.xz \\"
+  print "    | tar -xJ -C /opt/llvm --strip-components=1 \\"
+  print "    && ln -sf /opt/llvm/bin/clang /usr/bin/clang \\"
+  print "    && ln -sf /opt/llvm/bin/clang++ /usr/bin/clang++ \\"
+  print "    && clang --version"
+  next
+}
+{ print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
+mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
 rm -f ./docker/ubuntu1604.dockerfile.bak
 
 echo "--- Building native library in Ubuntu 16.04 container (linux/amd64) ---"
-# The Dockerfile's patches (clang-5.0 apt package, x86_64 cmake tarball, the
-# base image's amd64 digest pin) are all x64-specific — release.yml's arm64
-# native build uses a different patch set entirely (see build-native-arm64).
+# The Dockerfile's patches (x86_64 cmake tarball, the base image's amd64
+# digest pin) are x64-specific — release.yml's arm64 native build uses a
+# different patch set entirely (see build-native-arm64).
 # Force the build/run platform so this also works correctly (under QEMU
 # emulation) from an arm64 dev machine, instead of silently building for the
 # host architecture and pulling in incompatible arm64 packages.

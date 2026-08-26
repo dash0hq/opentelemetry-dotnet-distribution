@@ -5,8 +5,8 @@
 #
 # This is the arm64 counterpart of build-tracer-home-linux-x64.sh, mirroring
 # release.yml's build-native-arm64 + build-arm64 jobs (arm64-specific
-# Dockerfile patches: arm64v8 base image, no clang-5.0 apt package, LLVM 8
-# from GitHub instead, aarch64 cmake tarball). Prefer this one over the x64
+# Dockerfile patches: arm64v8 base image, aarch64 LLVM 8 tarball instead of
+# x64's x86_64 one, aarch64 cmake tarball). Prefer this one over the x64
 # script when developing on Apple Silicon: it runs natively instead of under
 # QEMU emulation, which has proven unreliable for the Ubuntu 16.04 image
 # (observed: dpkg-deb segfaulting mid-unpack under qemu-user).
