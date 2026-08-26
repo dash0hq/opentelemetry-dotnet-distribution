@@ -50,6 +50,11 @@ jobs:
           ref: ${{ inputs.upstream_sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
+          # actions/checkout runs `git clean -ffdx` in the workspace before
+          # checking out by default, which would delete the distribution/
+          # checkout from the step above. This checkout doesn't need that
+          # cleanup (it's the only thing writing to the workspace root).
+          clean: false
 
       - name: Fetch upstream release tags for MinVer
         # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
@@ -220,6 +225,11 @@ jobs:
           ref: ${{ inputs.upstream_sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
+          # actions/checkout runs `git clean -ffdx` in the workspace before
+          # checking out by default, which would delete the distribution/
+          # checkout from the step above. This checkout doesn't need that
+          # cleanup (it's the only thing writing to the workspace root).
+          clean: false
 
       - name: Fetch upstream release tags for MinVer
         # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
