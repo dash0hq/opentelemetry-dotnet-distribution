@@ -110,10 +110,22 @@ jobs:
         run: |
           set -euo pipefail
           docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
+          # This container only has .NET SDK 9.0.316 installed, and its
+          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
+          # (once the checked-out commit has one) pins the SDK to 10.0.302
+          # for other build paths; global.json has no MSBuild-style
+          # conditions, so drop it for this one container-only step instead
+          # of letting dotnet try to fetch and run an incompatible SDK
+          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
+          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
+          # here). Restored afterward for hygiene, though this job doesn't
+          # use global.json again.
+          rm -f global.json
           docker run -e OS_TYPE=linux-glibc --rm \
             --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
             dash0-native-build \
             /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
+          git checkout -- global.json 2>/dev/null || true
 
       - name: Upload native x64 artifact
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
@@ -332,10 +344,22 @@ jobs:
         run: |
           set -euo pipefail
           docker build -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
+          # This container only has .NET SDK 9.0.316 installed, and its
+          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
+          # (once the checked-out commit has one) pins the SDK to 10.0.302
+          # for other build paths; global.json has no MSBuild-style
+          # conditions, so drop it for this one container-only step instead
+          # of letting dotnet try to fetch and run an incompatible SDK
+          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
+          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
+          # here). Restored afterward for hygiene, though this job doesn't
+          # use global.json again.
+          rm -f global.json
           docker run -e OS_TYPE=linux-glibc --rm \
             --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
             dash0-native-build \
             /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
+          git checkout -- global.json 2>/dev/null || true
 
       - name: Upload native arm64 artifact
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
