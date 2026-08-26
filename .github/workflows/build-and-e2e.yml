@@ -65,6 +65,13 @@ jobs:
         # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
         run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
+      - name: Debug workspace layout
+        run: |
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          pwd
+          ls -la .
+          ls -la distribution || echo "distribution/ MISSING"
+
       - name: Build native library in Ubuntu 16.04 container
         run: |
           set -euo pipefail
