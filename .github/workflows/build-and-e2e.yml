@@ -33,16 +33,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-x64.dockerfile below -- see that
-        # file's header for why we build from our own versioned Dockerfile
-        # instead of upstream's (checked out separately below, into the
-        # workspace root, so all the other paths in this job stay
-        # unprefixed).
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
       - name: Checkout upstream
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -50,11 +40,19 @@ jobs:
           ref: ${{ inputs.upstream_sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
-          # actions/checkout runs `git clean -ffdx` in the workspace before
-          # checking out by default, which would delete the distribution/
-          # checkout from the step above. This checkout doesn't need that
-          # cleanup (it's the only thing writing to the workspace root).
-          clean: false
+
+      - name: Checkout distribution repo
+        # Needed only for docker/ubuntu1604-x64.dockerfile below -- see that
+        # file's header for why we build from our own versioned Dockerfile
+        # instead of upstream's. Checked out after upstream, into its own
+        # distribution/ subdirectory: actions/checkout wipes the whole
+        # target directory before checking out (regardless of the `clean`
+        # input, which only controls post-checkout cleanup of a repeat
+        # checkout of the *same* repo), so checking out upstream second
+        # would delete this one.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: distribution
 
       - name: Fetch upstream release tags for MinVer
         # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
@@ -64,13 +62,6 @@ jobs:
         # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
         # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
         run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Debug workspace layout
-        run: |
-          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
-          pwd
-          ls -la .
-          ls -la distribution || echo "distribution/ MISSING"
 
       - name: Build native library in Ubuntu 16.04 container
         run: |
@@ -215,16 +206,6 @@ jobs:
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 60
     steps:
-      - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-arm64.dockerfile below -- see
-        # that file's header for why we build from our own versioned
-        # Dockerfile instead of upstream's (checked out separately below,
-        # into the workspace root, so all the other paths in this job stay
-        # unprefixed).
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
       - name: Checkout upstream
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -232,11 +213,19 @@ jobs:
           ref: ${{ inputs.upstream_sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
-          # actions/checkout runs `git clean -ffdx` in the workspace before
-          # checking out by default, which would delete the distribution/
-          # checkout from the step above. This checkout doesn't need that
-          # cleanup (it's the only thing writing to the workspace root).
-          clean: false
+
+      - name: Checkout distribution repo
+        # Needed only for docker/ubuntu1604-arm64.dockerfile below -- see
+        # that file's header for why we build from our own versioned
+        # Dockerfile instead of upstream's. Checked out after upstream,
+        # into its own distribution/ subdirectory: actions/checkout wipes
+        # the whole target directory before checking out (regardless of
+        # the `clean` input, which only controls post-checkout cleanup of
+        # a repeat checkout of the *same* repo), so checking out upstream
+        # second would delete this one.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: distribution
 
       - name: Fetch upstream release tags for MinVer
         # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
