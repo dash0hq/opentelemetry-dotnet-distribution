@@ -4,10 +4,10 @@
 # "build once, reuse across tests" dev-loop mode (test/e2e/harness).
 #
 # This intentionally mirrors the build-native-x64 + build-x64 jobs in
-# .github/workflows/release.yml (same Dockerfile patches, same two-step
-# native-then-managed build), so it exercises the same path a real release
-# would take. It is a standalone script rather than a refactor of
-# release.yml, to avoid touching the working release pipeline.
+# .github/workflows/build-and-e2e.yml (same versioned Dockerfile, same
+# two-step native-then-managed build), so it exercises the same path a real
+# release would take. It is a standalone script rather than a refactor of
+# that workflow, to avoid touching the working release pipeline.
 #
 # Usage:
 #   ./scripts/build-tracer-home-linux-x64.sh [source-dir]
@@ -22,7 +22,8 @@
 
 set -euo pipefail
 
-source_dir="${1:-${DASH0_INSTRUMENTATION_SOURCE_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/../opentelemetry-dotnet-instrumentation}}"
+distribution_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_dir="${1:-${DASH0_INSTRUMENTATION_SOURCE_DIR:-${distribution_dir}/../opentelemetry-dotnet-instrumentation}}"
 
 if [ ! -d "${source_dir}/.git" ]; then
   echo "::error:: ${source_dir} is not a git checkout of opentelemetry-dotnet-instrumentation" >&2
@@ -37,40 +38,13 @@ echo "Building tracer-home from $(git rev-parse --abbrev-ref HEAD) @ $(git rev-p
 # explanation.
 git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
-echo "--- Patching ubuntu1604.dockerfile ---"
-sed -i.bak '/sha256sum -c/d' ./docker/ubuntu1604.dockerfile
-sed -i.bak 's|signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg|trusted=yes|' ./docker/ubuntu1604.dockerfile
-curl -fsSL https://curl.se/ca/cacert.pem -o ./docker/cacert.pem
-sed -i.bak 's|    libicu-dev$|    libicu-dev\n\n# CA-bundle refresh (script patch)\nCOPY docker/cacert.pem /etc/ssl/certs/ca-certificates.crt|' ./docker/ubuntu1604.dockerfile
-# Bypass the ubuntu-toolchain-r keyring fetch -- upstream now fetches the
-# signing key from keyserver.ubuntu.com before writing the sources.list
-# entry, an extra network round-trip that's intermittently flaky. Drop the
-# curl|gpg RUN entirely and switch the sources.list entry to [trusted=yes],
-# same fix already applied to kitware's repo above.
-sed -i.bak '/keyserver\.ubuntu\.com\/pks\/lookup/d' ./docker/ubuntu1604.dockerfile
-sed -i.bak "s|^    echo 'deb \[signed-by=/usr/share/keyrings/ubuntu-toolchain-r-archive-keyring\.gpg\]|RUN echo 'deb [trusted=yes]|" ./docker/ubuntu1604.dockerfile
-awk '/^    apt-get install -y --allow-unauthenticated cmake$/ {
-  print
-  print ""
-  print "# Override cmake with static Linux build from Kitware GitHub (script patch)"
-  print "RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.29.9/cmake-3.29.9-linux-x86_64.tar.gz \\"
-  print "    | tar -xz -C /usr/local --strip-components=1 \\"
-  print "    && ln -sf /usr/local/bin/cmake /usr/bin/cmake \\"
-  print "    && cmake --version"
-  next
-}
-{ print }' ./docker/ubuntu1604.dockerfile > ./docker/ubuntu1604.dockerfile.patched
-mv ./docker/ubuntu1604.dockerfile.patched ./docker/ubuntu1604.dockerfile
-rm -f ./docker/ubuntu1604.dockerfile.bak
-
 echo "--- Building native library in Ubuntu 16.04 container (linux/amd64) ---"
-# The Dockerfile's patches (clang-5.0 apt package, x86_64 cmake tarball, the
-# base image's amd64 digest pin) are all x64-specific — release.yml's arm64
-# native build uses a different patch set entirely (see build-native-arm64).
-# Force the build/run platform so this also works correctly (under QEMU
-# emulation) from an arm64 dev machine, instead of silently building for the
-# host architecture and pulling in incompatible arm64 packages.
-docker build --platform linux/amd64 -t dash0-native-build -f ./docker/ubuntu1604.dockerfile .
+# Build from our own versioned Dockerfile, not upstream's docker/ubuntu1604.dockerfile
+# -- see docker/ubuntu1604-x64.dockerfile's header for why. Force the
+# build/run platform so this also works correctly (under QEMU emulation)
+# from an arm64 dev machine, instead of silently building for the host
+# architecture and pulling in incompatible arm64 packages.
+docker build --platform linux/amd64 -t dash0-native-build -f "${distribution_dir}/docker/ubuntu1604-x64.dockerfile" .
 # This container only has .NET SDK 9.0.316 installed, and its ancient glibc
 # cannot run .NET 10 at all. A repo-root global.json (once present) pins the
 # SDK to 10.0.302 for other build paths; global.json has no MSBuild-style
