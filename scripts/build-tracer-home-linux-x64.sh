@@ -65,10 +65,20 @@ test -f "${native_so}"
 cp "${native_so}" /tmp/dash0-e2e-native-x64.so
 
 echo "--- Building managed tracer-home (requires .NET SDKs 6/7/8/9 installed) ---"
+# The native CMake build dir is shared (and hardcoded) across all platforms'
+# CompileNativeSrc* Nuke targets (see Build.Steps.{MacOS,Linux}.cs). The
+# docker step above just generated its CMakeCache.txt with source path
+# /project (the bind-mount target); reusing it here from the host's
+# CompileNativeSrcMacOs would fail with a "source does not match" CMake
+# error since the absolute path differs. It's gitignored/transient, so it's
+# safe to wipe before the host-side native build regenerates it.
+rm -rf src/OpenTelemetry.AutoInstrumentation.Native/build
 ./build.sh BuildTracer
 
 echo "--- Swapping in Ubuntu-16.04-built native library ---"
-rm "${native_so}"
+if [ -f "${native_so}" ]; then
+  rm "${native_so}"
+fi
 cp /tmp/dash0-e2e-native-x64.so "${native_so}"
 file "${native_so}"
 

@@ -18,7 +18,7 @@ RUN dotnet restore
 COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0
+FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
 WORKDIR /app
 COPY --from=build /app .
 

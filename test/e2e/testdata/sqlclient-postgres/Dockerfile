@@ -8,14 +8,14 @@
 #   app/          - a copy of examples/sqlclient-postgres
 #   tracer-home/  - the tracer-home under test (harness.TracerHome)
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS build
 WORKDIR /src
 COPY app/SqlClientPostgres.csproj .
 RUN dotnet restore
 COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0
+FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
 WORKDIR /app
 COPY --from=build /app .
 
