@@ -9,13 +9,10 @@ name: build-and-e2e
 #
 # glibc x64/arm64 are covered fully (build + full E2E suite). musl x64 is
 # also built and gated here now (build-native-x64-musl, build-x64-musl,
-# e2e-musl-x64), but only against the subset of E2E scenarios whose
-# testdata/*/Dockerfile actually branches on LIBC_FLAVOR
-# (aspnetcorenet8, runtimemetrics) -- the rest are still glibc-only
-# Dockerfiles and would just fail with a FileNotFound on the musl native
-# lib, not a real signal. Widen e2e-musl-x64's `go test` scope as more
-# scenarios get ported. musl arm64 isn't built here yet; it (and the full
-# release musl matrix) still comes from release.yml's own build-musl job.
+# e2e-musl-x64) against the full E2E suite too -- every scenario's
+# testdata/*/Dockerfile branches on LIBC_FLAVOR at this point. musl arm64
+# isn't built here yet; it (and the full release musl matrix) still comes
+# from release.yml's own build-musl job.
 on:
   workflow_call:
     inputs:
@@ -579,12 +576,7 @@ jobs:
   e2e-musl-x64:
     name: E2E tests (musl-x64)
     # Release-gate mode from test/e2e/README.md, same as the e2e job above,
-    # but against the musl tarball build-x64-musl just built, and scoped to
-    # only the scenarios whose testdata/*/Dockerfile branches on
-    # LIBC_FLAVOR (see this workflow's own header comment). Widen the `go
-    # test` path list below as more scenarios' Dockerfiles get ported --
-    # running the full suite here would just fail every other scenario with
-    # a FileNotFound on the musl native lib, not a real signal.
+    # but against the musl tarball build-x64-musl just built.
     needs: build-x64-musl
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -612,4 +604,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: test/e2e
-        run: go test -v ./aspnetcorenet8/... ./runtimemetrics/...
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        run: go test -v ./...
