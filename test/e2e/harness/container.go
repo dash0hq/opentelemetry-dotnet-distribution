@@ -75,7 +75,8 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 	t.Helper()
 	root := repoRoot(t)
 	tracerHome := TracerHome(t)
-	buildContext := stageBuildContext(t, root, scenario, tracerHome)
+	libcFlavor := LibcFlavor(t)
+	buildContext, dockerfile := stageBuildContext(t, root, scenario, tracerHome, libcFlavor)
 
 	env := map[string]string{
 		// The .NET tracer's own diagnostic logs default to a file inside
@@ -95,12 +96,23 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 	req := testcontainers.ContainerRequest{
 		FromDockerfile: testcontainers.FromDockerfile{
 			Context:       buildContext,
-			Dockerfile:    "Dockerfile",
+			Dockerfile:    dockerfile,
 			KeepImage:     true,
 			PrintBuildLog: true,
-			BuildArgs:     map[string]*string{"INJECTOR_ARCH": &injectorArch},
+			BuildArgs:     map[string]*string{"INJECTOR_ARCH": &injectorArch, "LIBC_FLAVOR": &libcFlavor},
 			BuildOptionsModifier: func(opts *client.ImageBuildOptions) {
 				opts.Platforms = []ocispec.Platform{{OS: "linux", Architecture: buildArch}}
+				// Every run builds under a fresh, random image tag (neither
+				// Repo nor Tag is set above), so Docker's build-layer cache
+				// -- not image reuse -- is the only thing that can serve
+				// stale content here. That cache is otherwise safe (COPY
+				// layers are content-checksummed against the freshly staged
+				// build context every run), except for floating base-image
+				// tags (e.g. mcr.microsoft.com/dotnet/aspnet:6.0-jammy):
+				// without this, Docker trusts whatever copy of that tag is
+				// already local, however old, instead of checking upstream
+				// for a newer one.
+				opts.PullParent = true
 			},
 		},
 		ImagePlatform:   "linux/" + buildArch,
@@ -186,22 +198,39 @@ func repoRoot(t testing.TB) string {
 // stageBuildContext assembles a temp directory combining the scenario's
 // Dockerfile (and sibling files, e.g. injector.conf), the example app's
 // source, and the tracer-home under test, since Docker's classic builder
-// needs everything COPY references under one context directory.
-func stageBuildContext(t testing.TB, root string, scenario AppScenario, tracerHome string) string {
+// needs everything COPY references under one context directory. Returns the
+// context directory and the Dockerfile name to build with: most scenarios
+// use a single ARG LIBC_FLAVOR-branched "Dockerfile", but one that instead
+// keeps glibc and musl fully separate (see grpc-client's Dockerfile header
+// for why) drops a "Dockerfile.<flavor>" alongside it, which takes
+// precedence over "Dockerfile" when present for that flavor.
+func stageBuildContext(t testing.TB, root string, scenario AppScenario, tracerHome string, libcFlavor string) (string, string) {
 	t.Helper()
 	ctxDir := t.TempDir()
 
 	copyTree(t, filepath.Join(root, scenario.TestdataDir), ctxDir)
 	copyTree(t, filepath.Join(root, scenario.ExampleDir), filepath.Join(ctxDir, "app"))
-	// Nested under glibc/, matching how dash0-operator's own
-	// download-instrumentation.sh lays out each libc flavor's extracted
-	// tarball (glibc/, musl/) side by side under one path-prefix directory:
-	// the injector auto-detects the running process's libc and looks under
-	// "<prefix>/glibc/linux-<arch>/..." or ".../musl/...", not the tarball's
-	// own top-level linux-<arch>/ directly.
-	copyTree(t, tracerHome, filepath.Join(ctxDir, "tracer-home", "glibc"))
+	// Nested under glibc/ or musl/ (per libcFlavor), matching how
+	// dash0-operator's own download-instrumentation.sh lays out each libc
+	// flavor's extracted tarball side by side under one path-prefix
+	// directory: the injector auto-detects the running process's libc and
+	// looks under "<prefix>/glibc/linux-<arch>/..." or
+	// "<prefix>/musl/linux-musl-<arch>/...", not the tarball's own
+	// top-level linux-<arch>/ (or linux-musl-<arch>/) directly.
+	copyTree(t, tracerHome, filepath.Join(ctxDir, "tracer-home", libcFlavor))
 
-	return ctxDir
+	dockerfile := "Dockerfile"
+	if flavored := "Dockerfile." + libcFlavor; fileExists(t, filepath.Join(ctxDir, flavored)) {
+		dockerfile = flavored
+	}
+	return ctxDir, dockerfile
+}
+
+// fileExists reports whether path exists and is a regular file.
+func fileExists(t testing.TB, path string) bool {
+	t.Helper()
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // copyTree copies src's contents into dst (created if needed), skipping

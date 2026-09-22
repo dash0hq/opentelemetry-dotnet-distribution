@@ -31,7 +31,7 @@ jobs:
           echo "Resolved upstream=${sha}"
 
   build-and-e2e:
-    name: Build glibc tracer-homes and run E2E gate
+    name: Build tracer-homes and run E2E gate
     needs: resolve-upstream-ref
     uses: ./.github/workflows/build-and-e2e.yml
     with:

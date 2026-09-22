@@ -44,6 +44,15 @@ echo "--- Building native library in Ubuntu 16.04 container (linux/arm64, native
 # Build from our own versioned Dockerfile, not upstream's docker/ubuntu1604.dockerfile
 # -- see docker/ubuntu1604-arm64.dockerfile's header for why.
 docker build --platform linux/arm64 -t dash0-native-build-arm64 -f "${distribution_dir}/docker/ubuntu1604-arm64.dockerfile" .
+# The native CMake build dir is shared (and hardcoded) across all platforms'
+# CompileNativeSrc* Nuke targets (see Build.Steps.{MacOS,Linux}.cs). If a
+# previous run left a CMakeCache.txt here generated from the host's own
+# absolute path (e.g. a prior ./build.sh BuildTracer run on this Mac), this
+# container's own native build would fail with a "source does not match"
+# CMake error, since it sees this same bind-mounted directory as /project
+# instead. Wipe it first so this container's build regenerates its own
+# cache cleanly, regardless of what ran here last.
+rm -rf src/OpenTelemetry.AutoInstrumentation.Native/build
 # This container only has .NET SDK 9.0.316 installed, and its ancient glibc
 # cannot run .NET 10 at all. A repo-root global.json (once present) pins the
 # SDK to 10.0.302 for other build paths; global.json has no MSBuild-style
@@ -64,10 +73,20 @@ test -f "${native_so}"
 cp "${native_so}" /tmp/dash0-e2e-native-arm64.so
 
 echo "--- Building managed tracer-home (requires .NET SDKs 6/7/8/9 installed) ---"
+# The native CMake build dir is shared (and hardcoded) across all platforms'
+# CompileNativeSrc* Nuke targets (see Build.Steps.{MacOS,Linux}.cs). The
+# docker step above just generated its CMakeCache.txt with source path
+# /project (the bind-mount target); reusing it here from the host's
+# CompileNativeSrcMacOs would fail with a "source does not match" CMake
+# error since the absolute path differs. It's gitignored/transient, so it's
+# safe to wipe before the host-side native build regenerates it.
+rm -rf src/OpenTelemetry.AutoInstrumentation.Native/build
 ./build.sh BuildTracer
 
 echo "--- Swapping in Ubuntu-16.04-built native library ---"
-rm "${native_so}"
+if [ -f "${native_so}" ]; then
+  rm "${native_so}"
+fi
 cp /tmp/dash0-e2e-native-arm64.so "${native_so}"
 file "${native_so}"
 

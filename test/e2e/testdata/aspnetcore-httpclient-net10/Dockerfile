@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds examples/sqlclient-postgres with the real OTel injector and
+# Builds examples/aspnetcore-httpclient-net10 with the real OTel injector and
 # the tracer-home under test wired in via LD_PRELOAD, for E2E testing.
+#
+# The net10.0 twin of the aspnetcore-httpclient scenario, validating that
+# instrumentation-image packaging changes don't regress ASP.NET Core tracing
+# above the net6.0/net7.0 floor.
 #
 # glibc-only. See Dockerfile.musl for the Alpine counterpart -- kept as a
 # fully separate file, rather than an ARG LIBC_FLAVOR-branched single file
@@ -15,18 +19,18 @@
 #
 # Build context is staged by test/e2e/harness (see container.go): it is not
 # the repo itself, but a temp dir containing:
-#   app/          - a copy of examples/sqlclient-postgres
+#   app/          - a copy of examples/aspnetcore-httpclient-net10
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/glibc/ for this file
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY app/SqlClientPostgres.csproj .
+COPY app/AspNetCoreHttpClientNet10.csproj .
 RUN dotnet restore
 COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /app .
 
@@ -50,7 +54,7 @@ COPY injector.conf /etc/opentelemetry/injector.conf
 ENV LD_PRELOAD=/usr/lib/libotelinject.so
 ENV OTEL_INJECTOR_CONFIG_FILE=/etc/opentelemetry/injector.conf
 ENV OTEL_INJECTOR_LOG_LEVEL=debug
-ENV OTEL_SERVICE_NAME=sqlclient-postgres-e2e
+ENV OTEL_SERVICE_NAME=aspnetcore-httpclient-net10-e2e
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "SqlClientPostgres.dll"]
+ENTRYPOINT ["dotnet", "AspNetCoreHttpClientNet10.dll"]
