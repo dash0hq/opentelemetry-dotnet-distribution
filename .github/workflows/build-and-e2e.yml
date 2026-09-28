@@ -154,12 +154,16 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+          # Only the SDK ./build.sh's own build driver needs (pinned above)
+          # -- not one SDK per TFM the managed src multi-targets down to.
+          # Building/publishing net6.0-net9.0 code only needs each TFM's
+          # reference-assembly package (Microsoft.NETCore.App.Ref), which
+          # NuGet restores automatically regardless of which SDKs are
+          # installed; only *running*/testing that code would need the
+          # matching runtime physically present, and this job never does
+          # that (RunManagedTests is a separate target BuildTracer doesn't
+          # touch).
+          dotnet-version: 10.0.100
 
       - name: Build tracer-home
         # Skip the standalone Restore target; it restores the whole solution,
@@ -306,12 +310,16 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+          # Only the SDK ./build.sh's own build driver needs (pinned above)
+          # -- not one SDK per TFM the managed src multi-targets down to.
+          # Building/publishing net6.0-net9.0 code only needs each TFM's
+          # reference-assembly package (Microsoft.NETCore.App.Ref), which
+          # NuGet restores automatically regardless of which SDKs are
+          # installed; only *running*/testing that code would need the
+          # matching runtime physically present, and this job never does
+          # that (RunManagedTests is a separate target BuildTracer doesn't
+          # touch).
+          dotnet-version: 10.0.100
 
       - name: Build tracer-home
         # Skip the standalone Restore target; it restores the whole solution,
@@ -484,12 +492,16 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+          # Only the SDK ./build.sh's own build driver needs (pinned above)
+          # -- not one SDK per TFM the managed src multi-targets down to.
+          # Building/publishing net6.0-net9.0 code only needs each TFM's
+          # reference-assembly package (Microsoft.NETCore.App.Ref), which
+          # NuGet restores automatically regardless of which SDKs are
+          # installed; only *running*/testing that code would need the
+          # matching runtime physically present, and this job never does
+          # that (RunManagedTests is a separate target BuildTracer doesn't
+          # touch).
+          dotnet-version: 10.0.100
 
       - name: Build tracer-home
         run: ./build.sh BuildTracer
@@ -632,12 +644,16 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+          # Only the SDK ./build.sh's own build driver needs (pinned above)
+          # -- not one SDK per TFM the managed src multi-targets down to.
+          # Building/publishing net6.0-net9.0 code only needs each TFM's
+          # reference-assembly package (Microsoft.NETCore.App.Ref), which
+          # NuGet restores automatically regardless of which SDKs are
+          # installed; only *running*/testing that code would need the
+          # matching runtime physically present, and this job never does
+          # that (RunManagedTests is a separate target BuildTracer doesn't
+          # touch).
+          dotnet-version: 10.0.100
 
       - name: Build tracer-home
         # Skip the standalone Restore target; it restores the whole solution,
