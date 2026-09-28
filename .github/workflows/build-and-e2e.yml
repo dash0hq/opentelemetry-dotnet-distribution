@@ -687,57 +687,147 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  e2e:
-    name: E2E tests (${{ matrix.suffix }})
-    # Release-gate mode from test/e2e/README.md: validate the exact tarball
-    # the matching build-* job above just built, not a from-source rebuild.
-    # One job, matrixed over all 4 tarballs (2 CPU architectures x 2 base-
-    # image families) instead of 3 near-duplicate jobs.
-    needs: [build-x64, build-arm64, build-x64-musl, build-arm64-musl]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # suffix names both the downloaded artifact (release-linux-<suffix>)
-          # and its tarball (dash0-opentelemetry-dotnet-instrumentation-linux-<suffix>.tar.gz),
-          # matching what each build-* job above uploads.
-          #
-          # env_libc_flavor becomes DASH0_E2E_LIBC_FLAVOR below. Empty for the
-          # two ordinary Ubuntu-based tarballs -- test/e2e/harness defaults to
-          # "glibc" when that variable is unset. Set to "musl" for the two
-          # Alpine-based tarballs, telling the harness to build each
-          # scenario's container from its Dockerfile.musl instead of the
-          # regular Dockerfile.
-          - suffix: x64
-            runner: ubuntu-22.04
-            env_libc_flavor: ""
-          - suffix: arm64
-            runner: ubuntu-22.04-arm
-            env_libc_flavor: ""
-          - suffix: musl-x64
-            runner: ubuntu-22.04
-            env_libc_flavor: musl
-          - suffix: musl-arm64
-            runner: ubuntu-22.04-arm
-            env_libc_flavor: musl
-    runs-on: ${{ matrix.runner }}
+  # The four e2e-* jobs below are near-duplicates of each other (differing
+  # only in which tarball they validate, which runner they need, and
+  # DASH0_E2E_LIBC_FLAVOR), kept as separate jobs rather than one matrixed
+  # job specifically so each one's `needs` names only the one build-* job
+  # that actually produces the tarball it downloads. A single matrixed job
+  # can't do that -- `needs` applies to the whole job, so every matrix leg
+  # would block on all four build-* jobs even though e.g. the x64 tarball
+  # has nothing to do with the arm64-musl build. That false dependency would
+  # delay, say, the x64 E2E run until the slowest of all four build tracks
+  # (typically an arm64 one, on the smaller arm64 runner pool) finishes,
+  # instead of starting the moment build-x64 itself is ready.
+
+  e2e-x64:
+    name: E2E tests (x64)
+    # Release-gate mode from test/e2e/README.md: validate the exact glibc
+    # tarball build-x64 just built, not a from-source rebuild.
+    needs: build-x64
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Download release-linux-${{ matrix.suffix }} tracer-home
+      - name: Download release-linux-x64 tracer-home
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          name: release-linux-${{ matrix.suffix }}
+          name: release-linux-x64
 
       - name: Extract tracer-home
         run: |
           set -euo pipefail
           mkdir -p tracer-home
-          tar -C tracer-home -xzf "dash0-opentelemetry-dotnet-instrumentation-linux-${{ matrix.suffix }}.tar.gz"
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz
           echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
-          echo "DASH0_E2E_LIBC_FLAVOR=${{ matrix.env_libc_flavor }}" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        run: go test -v ./...
+
+  e2e-arm64:
+    name: E2E tests (arm64)
+    # Release-gate mode from test/e2e/README.md: validate the exact glibc
+    # tarball build-arm64 just built, not a from-source rebuild.
+    needs: build-arm64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-arm64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-arm64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        run: go test -v ./...
+
+  e2e-musl-x64:
+    name: E2E tests (musl-x64)
+    # Release-gate mode from test/e2e/README.md, same as e2e-x64 above, but
+    # against the musl tarball build-x64-musl just built.
+    needs: build-x64-musl
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-musl-x64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-x64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+          echo "DASH0_E2E_LIBC_FLAVOR=musl" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        run: go test -v ./...
+
+  e2e-musl-arm64:
+    name: E2E tests (musl-arm64)
+    # Release-gate mode from test/e2e/README.md, same as e2e-musl-x64 above,
+    # but against the musl tarball build-arm64-musl just built.
+    needs: build-arm64-musl
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-musl-arm64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-arm64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+          echo "DASH0_E2E_LIBC_FLAVOR=musl" >> "$GITHUB_ENV"
 
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
