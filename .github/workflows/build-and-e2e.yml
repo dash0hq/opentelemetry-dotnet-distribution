@@ -95,9 +95,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  build-x64:
-    name: Build linux-x64 tracer-home
-    needs: build-native-x64
+  build-managed:
+    name: Build managed tracer-home
+    # Shared by all four build-* jobs below (x64/arm64 x glibc/musl). The
+    # managed profiler assemblies are portable IL -- identical regardless of
+    # which CPU architecture or libc flavor builds them. Only the native
+    # profiler .so differs per track, and that comes from the four
+    # build-native-* jobs instead. Building the managed side once here,
+    # rather than once per track (as every build-* job used to do via its
+    # own "Checkout upstream" through "Build tracer-home" steps), avoids
+    # three redundant recompiles of the exact same output.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -172,20 +179,60 @@ jobs:
         # projects it depends on.
         run: ./build.sh BuildTracer
 
+      - name: Strip native binaries from managed tracer-home
+        run: |
+          set -euo pipefail
+          # ./build.sh BuildTracer also compiles this runner's own native
+          # profiler library as a side effect (its CompileNativeSrc /
+          # PublishNativeProfiler dependency chain) and drops it under
+          # bin/tracer-home/linux-x64/ -- just this host's own architecture,
+          # not necessarily what any given build-* job below actually needs.
+          # Every build-* job supplies its own native .so from its matching
+          # build-native-* job instead, so strip it (and anything else
+          # incidental) here, keeping only the genuinely arch/libc-
+          # independent managed output.
+          find bin/tracer-home -mindepth 1 -maxdepth 1 \
+            ! -name LICENSE ! -name VERSION ! -name instrument.sh ! -name net \
+            -exec rm -rf {} +
+          ls -la bin/tracer-home
+
+      - name: Upload managed tracer-home artifact
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: managed-tracer-home
+          path: bin/tracer-home
+          if-no-files-found: error
+          retention-days: 7
+
+  build-x64:
+    name: Build linux-x64 tracer-home
+    needs: [build-native-x64, build-managed]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Download managed tracer-home artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: managed-tracer-home
+          path: bin/tracer-home
+
       - name: Download native x64 artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
           name: native-linux-x64
           path: native-x64
 
-      - name: Swap in ubuntu-16.04-built native library
+      - name: Add native library to tracer-home
         run: |
           set -euo pipefail
           src="native-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst="./bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
+          dst_dir="./bin/tracer-home/linux-x64"
+          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
           test -f "$src"
-          test -f "$dst"
-          rm "$dst"
+          # managed-tracer-home never contains any linux-*/ directory (see
+          # build-managed's own strip step) -- nothing to remove first here,
+          # just create the directory and place it.
+          mkdir -p "$dst_dir"
           cp "$src" "$dst"
           file "$dst"
 
@@ -272,61 +319,15 @@ jobs:
 
   build-x64-musl:
     name: Build linux-musl-x64 tracer-home
-    needs: build-native-x64-musl
+    needs: [build-native-x64-musl, build-managed]
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download managed tracer-home artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Pin the SDK ./build.sh runs under
-        # See build-x64's own copy of this step for the full explanation
-        # (10.0.400 vs Nuke incompatibility) -- identical here, this job
-        # only differs in which native library it swaps in afterward.
-        run: |
-          cat > global.json <<'EOF'
-          {
-            "sdk": {
-              "version": "10.0.100",
-              "rollForward": "disable"
-            }
-          }
-          EOF
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
-        with:
-          # Only the SDK ./build.sh's own build driver needs (pinned above)
-          # -- not one SDK per TFM the managed src multi-targets down to.
-          # Building/publishing net6.0-net9.0 code only needs each TFM's
-          # reference-assembly package (Microsoft.NETCore.App.Ref), which
-          # NuGet restores automatically regardless of which SDKs are
-          # installed; only *running*/testing that code would need the
-          # matching runtime physically present, and this job never does
-          # that (RunManagedTests is a separate target BuildTracer doesn't
-          # touch).
-          dotnet-version: 10.0.100
-
-      - name: Build tracer-home
-        # Skip the standalone Restore target; it restores the whole solution,
-        # including test-applications that pin NServiceBus 9.2.6 (net8-only),
-        # which fails on the multi-TFM restore. BuildTracer restores only the
-        # projects it depends on.
-        run: ./build.sh BuildTracer
+          name: managed-tracer-home
+          path: bin/tracer-home
 
       - name: Download native musl x64 artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
@@ -334,18 +335,16 @@ jobs:
           name: native-linux-musl-x64
           path: native-x64-musl
 
-      - name: Add musl-built native library to tracer-home
+      - name: Add native library to tracer-home
         run: |
           set -euo pipefail
           src="native-x64-musl/OpenTelemetry.AutoInstrumentation.Native.so"
           dst_dir="./bin/tracer-home/linux-musl-x64"
           dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
           test -f "$src"
-          # Unlike the glibc jobs' swap-in (which overwrites a file
-          # ./build.sh BuildTracer already produced for this same OS_TYPE),
-          # this runner's build.sh run above never sets OS_TYPE=linux-musl,
-          # so linux-musl-x64/ doesn't exist yet -- there's nothing to
-          # remove first, just create the directory and place it.
+          # managed-tracer-home never contains any linux-*/ directory (see
+          # build-managed's own strip step) -- nothing to remove first here,
+          # just create the directory and place it.
           mkdir -p "$dst_dir"
           cp "$src" "$dst"
           file "$dst"
@@ -435,76 +434,18 @@ jobs:
 
   build-arm64:
     name: Build linux-arm64 tracer-home
-    needs: build-native-arm64
+    # Downloads the same managed-tracer-home artifact as build-x64/
+    # build-x64-musl/build-arm64-musl -- built once on an x64 runner, it's
+    # portable IL, so which architecture built it doesn't matter here.
+    needs: [build-native-arm64, build-managed]
     runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download managed tracer-home artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Pin the SDK ./build.sh runs under
-        # The checked-out commit (from .upstream-ref) has no global.json, so
-        # without a pin `dotnet` resolves to the highest SDK it finds on the
-        # runner. build/_build.csproj and
-        # tools/DependencyListGenerator/DependencyListGenerator.csproj both
-        # target net10.0 (falling back to net9.0 only when the MSBuild
-        # property IsLegacyUbuntu is set -- which is for the Ubuntu 16.04
-        # native-build container, not this runner), so the build driver
-        # itself genuinely needs some .NET 10 SDK to run.
-        #
-        # It can't be just any .NET 10 SDK, though: 10.0.400 specifically
-        # throws Microsoft.Build.Exceptions.InvalidProjectFileException
-        # ("Could not load file or assembly 'NuGet.Frameworks, Version=
-        # 7.9.0.0' ... manifest definition does not match") from Nuke's
-        # in-process ProjectModelTasks.ParseProject call (TransientDepen-
-        # denciesGenerator) -- confirmed to reproduce identically whether
-        # 10.0.400 is the runner's ambient preinstalled SDK or one freshly
-        # installed by actions/setup-dotnet just below, so this is a
-        # version-specific SDK/Nuke incompatibility, not an install-
-        # provenance issue. Pinned to 10.0.100 (the first stable 10.0
-        # release, GA 2025-11-11) with rollForward: disable to force
-        # exactly that feature band instead of rolling forward into 10.0.400
-        # again.
-        run: |
-          cat > global.json <<'EOF'
-          {
-            "sdk": {
-              "version": "10.0.100",
-              "rollForward": "disable"
-            }
-          }
-          EOF
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
-        with:
-          # Only the SDK ./build.sh's own build driver needs (pinned above)
-          # -- not one SDK per TFM the managed src multi-targets down to.
-          # Building/publishing net6.0-net9.0 code only needs each TFM's
-          # reference-assembly package (Microsoft.NETCore.App.Ref), which
-          # NuGet restores automatically regardless of which SDKs are
-          # installed; only *running*/testing that code would need the
-          # matching runtime physically present, and this job never does
-          # that (RunManagedTests is a separate target BuildTracer doesn't
-          # touch).
-          dotnet-version: 10.0.100
-
-      - name: Build tracer-home
-        run: ./build.sh BuildTracer
+          name: managed-tracer-home
+          path: bin/tracer-home
 
       - name: Download native arm64 artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
@@ -512,14 +453,17 @@ jobs:
           name: native-linux-arm64
           path: native-arm64
 
-      - name: Swap in ubuntu-16.04-built native library
+      - name: Add native library to tracer-home
         run: |
           set -euo pipefail
           src="native-arm64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst="./bin/tracer-home/linux-arm64/OpenTelemetry.AutoInstrumentation.Native.so"
+          dst_dir="./bin/tracer-home/linux-arm64"
+          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
           test -f "$src"
-          test -f "$dst"
-          rm "$dst"
+          # managed-tracer-home never contains any linux-*/ directory (see
+          # build-managed's own strip step) -- nothing to remove first here,
+          # just create the directory and place it.
+          mkdir -p "$dst_dir"
           cp "$src" "$dst"
           file "$dst"
 
@@ -606,61 +550,18 @@ jobs:
 
   build-arm64-musl:
     name: Build linux-musl-arm64 tracer-home
-    needs: build-native-arm64-musl
+    # Downloads the same managed-tracer-home artifact as the other three
+    # build-* jobs -- see build-arm64's own comment for why that's fine
+    # despite it being built on an x64 runner.
+    needs: [build-native-arm64-musl, build-managed]
     runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
+    timeout-minutes: 15
     steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download managed tracer-home artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Pin the SDK ./build.sh runs under
-        # See build-x64's own copy of this step for the full explanation
-        # (10.0.400 vs Nuke incompatibility) -- identical here, this job
-        # only differs in which native library it swaps in afterward.
-        run: |
-          cat > global.json <<'EOF'
-          {
-            "sdk": {
-              "version": "10.0.100",
-              "rollForward": "disable"
-            }
-          }
-          EOF
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
-        with:
-          # Only the SDK ./build.sh's own build driver needs (pinned above)
-          # -- not one SDK per TFM the managed src multi-targets down to.
-          # Building/publishing net6.0-net9.0 code only needs each TFM's
-          # reference-assembly package (Microsoft.NETCore.App.Ref), which
-          # NuGet restores automatically regardless of which SDKs are
-          # installed; only *running*/testing that code would need the
-          # matching runtime physically present, and this job never does
-          # that (RunManagedTests is a separate target BuildTracer doesn't
-          # touch).
-          dotnet-version: 10.0.100
-
-      - name: Build tracer-home
-        # Skip the standalone Restore target; it restores the whole solution,
-        # including test-applications that pin NServiceBus 9.2.6 (net8-only),
-        # which fails on the multi-TFM restore. BuildTracer restores only the
-        # projects it depends on.
-        run: ./build.sh BuildTracer
+          name: managed-tracer-home
+          path: bin/tracer-home
 
       - name: Download native musl arm64 artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
@@ -668,18 +569,16 @@ jobs:
           name: native-linux-musl-arm64
           path: native-arm64-musl
 
-      - name: Add musl-built native library to tracer-home
+      - name: Add native library to tracer-home
         run: |
           set -euo pipefail
           src="native-arm64-musl/OpenTelemetry.AutoInstrumentation.Native.so"
           dst_dir="./bin/tracer-home/linux-musl-arm64"
           dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
           test -f "$src"
-          # Unlike the glibc jobs' swap-in (which overwrites a file
-          # ./build.sh BuildTracer already produced for this same OS_TYPE),
-          # this runner's build.sh run above never sets OS_TYPE=linux-musl,
-          # so linux-musl-arm64/ doesn't exist yet -- there's nothing to
-          # remove first, just create the directory and place it.
+          # managed-tracer-home never contains any linux-*/ directory (see
+          # build-managed's own strip step) -- nothing to remove first here,
+          # just create the directory and place it.
           mkdir -p "$dst_dir"
           cp "$src" "$dst"
           file "$dst"
