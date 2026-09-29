@@ -69,7 +69,7 @@ type AppScenario struct {
 	// Dockerfile, alongside the harness's own INJECTOR_ARCH/LIBC_FLAVOR
 	// (see StartInstrumentedApp). Used by scenarios that test against
 	// multiple .NET versions from a single multi-targeted example project
-	// and a DOTNET_VERSION-parameterized Dockerfile, instead of a separate
+	// and a DASH0_DOTNET_VERSION-parameterized Dockerfile, instead of a separate
 	// example/testdata directory per version.
 	BuildArgs map[string]string
 }

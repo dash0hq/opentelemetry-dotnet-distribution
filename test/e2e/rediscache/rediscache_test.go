@@ -20,7 +20,7 @@ import (
 
 // dotNetVersions are the TFMs examples/redis-cache multi-targets, matching
 // what test/e2e/testdata/redis-cache's Dockerfile/Dockerfile.musl accept via
-// their DOTNET_VERSION build arg.
+// their DASH0_DOTNET_VERSION build arg.
 var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
 
 func TestRedisCache(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRedisCache(t *testing.T) {
 				ExposedPort: "8080/tcp",
 				WaitPath:    "/",
 				Networks:    []string{nw},
-				BuildArgs:   map[string]string{"DOTNET_VERSION": dotnetVersion},
+				BuildArgs:   map[string]string{"DASH0_DOTNET_VERSION": dotnetVersion},
 			})
 
 			status, body := harness.ContainerHTTPGet(t, ctx, container, "8080/tcp", "/cache")

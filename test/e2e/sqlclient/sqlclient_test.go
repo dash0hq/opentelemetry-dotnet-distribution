@@ -20,7 +20,7 @@ import (
 
 // dotNetVersions are the TFMs examples/sqlclient-postgres multi-targets,
 // matching what test/e2e/testdata/sqlclient-postgres's Dockerfile/
-// Dockerfile.musl accept via their DOTNET_VERSION build arg.
+// Dockerfile.musl accept via their DASH0_DOTNET_VERSION build arg.
 var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
 
 func TestSqlClientPostgres(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSqlClientPostgres(t *testing.T) {
 				ExposedPort: "8080/tcp",
 				WaitPath:    "/",
 				Networks:    []string{nw},
-				BuildArgs:   map[string]string{"DOTNET_VERSION": dotnetVersion},
+				BuildArgs:   map[string]string{"DASH0_DOTNET_VERSION": dotnetVersion},
 			})
 
 			status, body := harness.ContainerHTTPGet(t, ctx, container, "8080/tcp", "/query")

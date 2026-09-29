@@ -87,7 +87,7 @@ a re-pull for the correct platform.
 
 `sqlclient`, `rediscache`, `quartz`, and `grpc` each multi-target their example
 app's `.csproj` across net6.0-net10.0 and build it via a single
-`DOTNET_VERSION`-parameterized `Dockerfile`/`Dockerfile.musl` per scenario,
+`DASH0_DOTNET_VERSION`-parameterized `Dockerfile`/`Dockerfile.musl` per scenario,
 rather than a separate example/testdata directory per TFM (see
 `harness.AppScenario.BuildArgs`). `aspnetcorenet6`/`efcorenet6` and their
 `net8` twins remain separate directories instead, since both are already

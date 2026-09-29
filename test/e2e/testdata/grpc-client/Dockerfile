@@ -21,11 +21,11 @@
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/glibc/ for this file
 #
-# DOTNET_VERSION selects which of GrpcClient.csproj's multi-targeted TFMs
+# DASH0_DOTNET_VERSION selects which of GrpcClient.csproj's multi-targeted TFMs
 # (net6.0-net10.0) to build and run, passed by test/e2e/grpc's own test loop
 # via harness.AppScenario.BuildArgs -- one example project and one Dockerfile
 # cover every version instead of a separate directory per TFM.
-ARG DOTNET_VERSION=6.0
+ARG DASH0_DOTNET_VERSION=6.0
 
 # The jammy variant (Ubuntu 22.04) is needed at build time only, and only for
 # net6.0/net7.0: Grpc.Tools' bundled arm64 protoc binary requires a newer
@@ -38,15 +38,15 @@ ARG DOTNET_VERSION=6.0
 # the glibc constraint is build-time-only (the bundled protoc binary).
 ARG SDK_TAG_SUFFIX=""
 
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}${SDK_TAG_SUFFIX} AS build
-ARG DOTNET_VERSION
+FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION}${SDK_TAG_SUFFIX} AS build
+ARG DASH0_DOTNET_VERSION
 WORKDIR /src
 COPY app/GrpcClient.csproj .
-RUN dotnet restore -p:TargetFramework=net${DOTNET_VERSION}
+RUN dotnet restore -p:TargetFramework=net${DASH0_DOTNET_VERSION}
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
+RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}
+FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}
 WORKDIR /app
 COPY --from=build /app .
 

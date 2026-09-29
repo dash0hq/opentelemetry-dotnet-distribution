@@ -23,7 +23,7 @@ import (
 
 // dotNetVersions are the TFMs examples/grpc-client multi-targets, matching
 // what test/e2e/testdata/grpc-client's Dockerfile/Dockerfile.musl accept via
-// their DOTNET_VERSION build arg.
+// their DASH0_DOTNET_VERSION build arg.
 var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
 
 func TestGrpcNetClient(t *testing.T) {
@@ -54,7 +54,7 @@ func TestGrpcNetClient(t *testing.T) {
 				ExposedPort: "8080/tcp",
 				WaitPath:    "/",
 				BuildArgs: map[string]string{
-					"DOTNET_VERSION": dotnetVersion,
+					"DASH0_DOTNET_VERSION": dotnetVersion,
 					"SDK_TAG_SUFFIX": sdkTagSuffix,
 				},
 			})

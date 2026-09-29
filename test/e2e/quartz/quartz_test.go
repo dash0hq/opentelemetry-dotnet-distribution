@@ -23,7 +23,7 @@ import (
 
 // dotNetVersions are the TFMs examples/quartz-job multi-targets, matching
 // what test/e2e/testdata/quartz-job's Dockerfile/Dockerfile.musl accept via
-// their DOTNET_VERSION build arg.
+// their DASH0_DOTNET_VERSION build arg.
 var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
 
 func TestQuartzJob(t *testing.T) {
@@ -44,7 +44,7 @@ func TestQuartzJob(t *testing.T) {
 				TestdataDir: "test/e2e/testdata/quartz-job",
 				ExposedPort: "8080/tcp",
 				WaitPath:    "/",
-				BuildArgs:   map[string]string{"DOTNET_VERSION": dotnetVersion},
+				BuildArgs:   map[string]string{"DASH0_DOTNET_VERSION": dotnetVersion},
 			})
 
 			// The job fires every 2 seconds starting on app startup; no HTTP call
