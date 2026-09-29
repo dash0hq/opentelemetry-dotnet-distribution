@@ -3,12 +3,7 @@
 # Builds examples/quartz-job with the real OTel injector and
 # the tracer-home under test wired in via LD_PRELOAD, for E2E testing.
 #
-# musl-only Alpine counterpart of ./Dockerfile -- see that file's header
-# (and grpc-client/Dockerfile's, the original rationale) for why this
-# scenario keeps the two flavors as fully separate files instead of the ARG
-# LIBC_FLAVOR-branched pattern. Selected by harness.stageBuildContext
-# whenever DASH0_E2E_LIBC_FLAVOR is "musl" and this file is present
-# alongside the scenario's Dockerfile.
+# musl-only Alpine counterpart of ./Dockerfile
 #
 # Build context is staged by test/e2e/harness (see container.go): it is not
 # the repo itself, but a temp dir containing:
@@ -30,15 +25,11 @@ COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
 
 # The real OTel injector, same download source dash0-operator's
-# instrumentation image uses. Checksum verification is skipped here (unlike
-# that image) since this is test-only infrastructure, not a shipped
-# artifact. Fetched here in the build stage, not the final runtime stage:
-# the SDK image already ships curl + ca-certificates (needed for NuGet
-# restore), so no apt-get/apk install is needed here, unlike in the aspnet
-# runtime image -- and net6.0/net7.0's now-EOL Debian bullseye security repo
+# instrumentation image uses. Fetched here in the build stage, not the final runtime stage:
+# net6.0/net7.0's now-EOL Debian bullseye security repo
 # has started 404ing on some of its own already-published point-release
 # packages (curl, ca-certificates, libnghttp2, ...), making `apt-get install`
-# there fail nondeterministically.
+# there fail.
 ARG INJECTOR_VERSION=v0.11.0
 ARG INJECTOR_ARCH=amd64
 RUN curl -fsSL -o /usr/lib/libotelinject.so \

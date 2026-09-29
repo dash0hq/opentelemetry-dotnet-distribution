@@ -47,15 +47,11 @@ COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
 
 # The real OTel injector, same download source dash0-operator's
-# instrumentation image uses. Checksum verification is skipped here (unlike
-# that image) since this is test-only infrastructure, not a shipped
-# artifact. Fetched here in the build stage, not the final runtime stage:
-# the SDK image already ships curl + ca-certificates (needed for NuGet
-# restore), so no apt-get/apk install is needed here, unlike in the aspnet
-# runtime image -- and net6.0/net7.0's now-EOL Debian bullseye security repo
+# instrumentation image uses. Fetched here in the build stage, not the final runtime stage:
+# net6.0/net7.0's now-EOL Debian bullseye security repo
 # has started 404ing on some of its own already-published point-release
 # packages (curl, ca-certificates, libnghttp2, ...), making `apt-get install`
-# there fail nondeterministically.
+# there fail.
 ARG INJECTOR_VERSION=v0.11.0
 ARG INJECTOR_ARCH=amd64
 RUN curl -fsSL -o /usr/lib/libotelinject.so \

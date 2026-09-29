@@ -6,13 +6,6 @@ name: build-and-e2e
 # by prepare-release, gating the actual publish) and pr-validation.yml
 # (building the SHA currently pinned in .upstream-ref, on every PR) so the
 # build+test logic has one definition instead of two drifting copies.
-#
-# glibc x64/arm64 and musl x64/arm64 are all covered fully now (build + full
-# E2E suite) -- every scenario's testdata/*/Dockerfile branches on
-# LIBC_FLAVOR (or ships a Dockerfile.musl twin) at this point. The full
-# release musl matrix (the actual published assets) still comes from
-# release.yml's own build-musl job -- this workflow's musl builds only exist
-# to gate them with E2E coverage before that publish.
 on:
   workflow_call:
     inputs:
@@ -45,26 +38,9 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-x64.dockerfile below -- see that
-        # file's header for why we build from our own versioned Dockerfile
-        # instead of upstream's. Checked out after upstream, into its own
-        # distribution/ subdirectory: actions/checkout wipes the whole
-        # target directory before checking out (regardless of the `clean`
-        # input, which only controls post-checkout cleanup of a repeat
-        # checkout of the *same* repo), so checking out upstream second
-        # would delete this one.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: distribution
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Build native library in Ubuntu 16.04 container
         run: |
@@ -99,12 +75,8 @@ jobs:
     name: Build managed tracer-home
     # Shared by all four build-* jobs below (x64/arm64 x glibc/musl). The
     # managed profiler assemblies are portable IL -- identical regardless of
-    # which CPU architecture or libc flavor builds them. Only the native
-    # profiler .so differs per track, and that comes from the four
-    # build-native-* jobs instead. Building the managed side once here,
-    # rather than once per track (as every build-* job used to do via its
-    # own "Checkout upstream" through "Build tracer-home" steps), avoids
-    # three redundant recompiles of the exact same output.
+    # which CPU architecture or libc flavor builds them. Building the managed side
+    # once here, rather than once per track.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -115,15 +87,6 @@ jobs:
           ref: ${{ inputs.upstream_sha }}
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Pin the SDK ./build.sh runs under
         # The checked-out commit (from .upstream-ref) has no global.json, so
@@ -161,15 +124,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          # Only the SDK ./build.sh's own build driver needs (pinned above)
-          # -- not one SDK per TFM the managed src multi-targets down to.
           # Building/publishing net6.0-net9.0 code only needs each TFM's
-          # reference-assembly package (Microsoft.NETCore.App.Ref), which
-          # NuGet restores automatically regardless of which SDKs are
-          # installed; only *running*/testing that code would need the
-          # matching runtime physically present, and this job never does
-          # that (RunManagedTests is a separate target BuildTracer doesn't
-          # touch).
+          # reference-assembly package, which NuGet restores automatically
+          # regardless of which SDKs are installed.
           dotnet-version: 10.0.100
 
       - name: Build tracer-home
@@ -182,15 +139,9 @@ jobs:
       - name: Strip native binaries from managed tracer-home
         run: |
           set -euo pipefail
-          # ./build.sh BuildTracer also compiles this runner's own native
-          # profiler library as a side effect (its CompileNativeSrc /
-          # PublishNativeProfiler dependency chain) and drops it under
-          # bin/tracer-home/linux-x64/ -- just this host's own architecture,
-          # not necessarily what any given build-* job below actually needs.
           # Every build-* job supplies its own native .so from its matching
-          # build-native-* job instead, so strip it (and anything else
-          # incidental) here, keeping only the genuinely arch/libc-
-          # independent managed output.
+          # build-native-* job instead, so strip it here, keeping only the genuinely
+          # arch/libc-independent managed output.
           find bin/tracer-home -mindepth 1 -maxdepth 1 \
             ! -name LICENSE ! -name VERSION ! -name instrument.sh ! -name net \
             -exec rm -rf {} +
@@ -229,9 +180,6 @@ jobs:
           dst_dir="./bin/tracer-home/linux-x64"
           dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
           test -f "$src"
-          # managed-tracer-home never contains any linux-*/ directory (see
-          # build-managed's own strip step) -- nothing to remove first here,
-          # just create the directory and place it.
           mkdir -p "$dst_dir"
           cp "$src" "$dst"
           file "$dst"
@@ -269,34 +217,14 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout distribution repo
-        # Needed only for docker/alpine322-x64-musl.dockerfile below -- see
-        # ubuntu1604-x64.dockerfile's header for the general rationale (own
-        # versioned Dockerfile, not upstream's). Checked out after upstream,
-        # into its own distribution/ subdirectory: actions/checkout wipes
-        # the whole target directory before checking out (regardless of
-        # the `clean` input, which only controls post-checkout cleanup of
-        # a repeat checkout of the *same* repo), so checking out upstream
-        # second would delete this one.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: distribution
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Build native library in Alpine container
         run: |
           set -euo pipefail
           docker build -t dash0-native-build-musl -f distribution/docker/alpine322-x64-musl.dockerfile .
-          # alpine322-x64-musl.dockerfile only carries the one SDK its native
-          # build driver needs (see that file's header) -- same scope as
-          # ubuntu1604-x64.dockerfile, not upstream's heavier alpine.dockerfile.
           # Drop global.json for this container-only step for the same
           # reason as the glibc native jobs above: a repo-root global.json
           # (once the checked-out commit has one) could pin an SDK feature
@@ -394,15 +322,6 @@ jobs:
         with:
           path: distribution
 
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
       - name: Build native library in Ubuntu 16.04 container
         run: |
           set -euo pipefail
@@ -434,9 +353,6 @@ jobs:
 
   build-arm64:
     name: Build linux-arm64 tracer-home
-    # Downloads the same managed-tracer-home artifact as build-x64/
-    # build-x64-musl/build-arm64-musl -- built once on an x64 runner, it's
-    # portable IL, so which architecture built it doesn't matter here.
     needs: [build-native-arm64, build-managed]
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 15
@@ -500,35 +416,15 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout distribution repo
-        # Needed only for docker/alpine322-arm64-musl.dockerfile below -- see
-        # ubuntu1604-x64.dockerfile's header for the general rationale (own
-        # versioned Dockerfile, not upstream's). Checked out after upstream,
-        # into its own distribution/ subdirectory: actions/checkout wipes
-        # the whole target directory before checking out (regardless of
-        # the `clean` input, which only controls post-checkout cleanup of
-        # a repeat checkout of the *same* repo), so checking out upstream
-        # second would delete this one.
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           path: distribution
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Build native library in Alpine container
         run: |
           set -euo pipefail
           docker build -t dash0-native-build-arm64-musl -f distribution/docker/alpine322-arm64-musl.dockerfile .
-          # alpine322-arm64-musl.dockerfile only carries the one SDK its
-          # native build driver needs (see that file's header) -- same scope
-          # as ubuntu1604-arm64.dockerfile, not upstream's heavier
-          # alpine.dockerfile. Drop global.json for this container-only step
+          # Drop global.json for this container-only step
           # for the same reason as the glibc native jobs above: a repo-root
           # global.json (once the checked-out commit has one) could pin an
           # SDK feature band this container doesn't have. Restored afterward
@@ -550,9 +446,6 @@ jobs:
 
   build-arm64-musl:
     name: Build linux-musl-arm64 tracer-home
-    # Downloads the same managed-tracer-home artifact as the other three
-    # build-* jobs -- see build-arm64's own comment for why that's fine
-    # despite it being built on an x64 runner.
     needs: [build-native-arm64-musl, build-managed]
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 15
@@ -605,19 +498,13 @@ jobs:
   # The four e2e-* jobs below are near-duplicates of each other (differing
   # only in which tarball they validate, which runner they need, and
   # DASH0_E2E_LIBC_FLAVOR), kept as separate jobs rather than one matrixed
-  # job specifically so each one's `needs` names only the one build-* job
-  # that actually produces the tarball it downloads. A single matrixed job
-  # can't do that -- `needs` applies to the whole job, so every matrix leg
+  # job specifically. As a single matrix job, every matrix leg
   # would block on all four build-* jobs even though e.g. the x64 tarball
   # has nothing to do with the arm64-musl build. That false dependency would
   # delay, say, the x64 E2E run until the slowest of all four build tracks
-  # (typically an arm64 one, on the smaller arm64 runner pool) finishes,
-  # instead of starting the moment build-x64 itself is ready.
+  # finishes, instead of starting the moment build-x64 itself is ready.
   #
-  # Each of the four DOES matrix internally on dotnet-version, though: unlike
-  # arch/libc, which .NET version the test apps run doesn't change what a leg
-  # needs -- every version downloads the exact same tarball -- so there's no
-  # differing-`needs` problem here.
+  # Each of the four DOES matrix internally on dotnet-version.
 
   e2e-x64:
     name: "E2E tests (x64, ${{ matrix.dotnet-version }})"
@@ -630,7 +517,7 @@ jobs:
       fail-fast: false
       matrix:
         # One leg per .NET version the e2e suite covers (see README.md's
-        # Scenarios table): quartz/rediscache/sqlclient/grpc and the
+        # Scenarios table): the
         # aspnetcorenet8/efcorenet8 twins multi-target net6.0/net8.0 through
         # net10.0 respectively, each with a subtest per version -- the
         # `go test -run` pattern below selects just this leg's subtest from
@@ -676,9 +563,7 @@ jobs:
           EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
-          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
-          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # EXTRA_TESTS adds the net6.0-only fixed-TFM
           # scenarios on the "6.0" leg only (see the matrix comment above).
           tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
           if [ -n "$EXTRA_TESTS" ]; then
@@ -734,9 +619,7 @@ jobs:
           EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
-          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
-          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # EXTRA_TESTS adds the net6.0-only fixed-TFM
           # scenarios on the "6.0" leg only (see the matrix comment above).
           tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
           if [ -n "$EXTRA_TESTS" ]; then
@@ -793,9 +676,7 @@ jobs:
           EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
-          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
-          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # EXTRA_TESTS adds the net6.0-only fixed-TFM
           # scenarios on the "6.0" leg only (see the matrix comment above).
           tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
           if [ -n "$EXTRA_TESTS" ]; then
@@ -852,9 +733,7 @@ jobs:
           EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
-          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
-          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # EXTRA_TESTS adds the net6.0-only fixed-TFM
           # scenarios on the "6.0" leg only (see the matrix comment above).
           tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
           if [ -n "$EXTRA_TESTS" ]; then
