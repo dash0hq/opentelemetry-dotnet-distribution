@@ -12,8 +12,20 @@
     <PackageReference Include="Grpc.Net.Client" Version="2.66.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Protobuf Include="Protos/greet.proto" GrpcServices="Both" />
-  </ItemGroup>
+  <!--
+    Checked-in output of Grpc.Tools' protoc/grpc_csharp_plugin codegen for
+    Protos/greet.proto (via <Protobuf Include="Protos/greet.proto"
+    GrpcServices="Both" />), rather than generating it at build time.
+    Grpc.Tools 2.66.0's bundled arm64 protoc binary fails to even start
+    ("No such file or directory" from execve) on GitHub's arm64-hosted
+    runners specifically; it reproduces neither on real arm64 hardware
+    outside CI nor under QEMU-emulated arm64, so it's a runner-specific
+    quirk, not something fixable here. Regenerate by temporarily restoring
+    the Grpc.Tools PackageReference and the <Protobuf> item below, running
+    `dotnet build -f net8.0`, and copying
+    obj/Release/net8.0/Protos/{Greet,GreetGrpc}.cs over these two files.
+    No explicit Compile item is needed: the SDK already globs **/*.cs by
+    default, which picks up Generated/*.cs on its own.
+  -->
 
 </Project>
