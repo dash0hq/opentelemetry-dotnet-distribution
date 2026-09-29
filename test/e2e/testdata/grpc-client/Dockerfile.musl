@@ -15,17 +15,24 @@
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/musl/ for this file
 #
-# Unlike ./Dockerfile, no jammy-vs-bullseye glibc-version pin is needed at
-# build time -- Alpine's own toolchain is new enough regardless.
+# DOTNET_VERSION selects which of GrpcClient.csproj's multi-targeted TFMs
+# (net6.0-net10.0) to build and run -- see ./Dockerfile's own header.
+#
+# Unlike ./Dockerfile, no jammy-vs-bullseye glibc-version pin is ever needed
+# at build time -- Alpine's own toolchain is new enough regardless of
+# version, so there's no SDK_TAG_SUFFIX equivalent here.
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0-alpine AS build
+ARG DOTNET_VERSION=6.0
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-alpine AS build
+ARG DOTNET_VERSION
 WORKDIR /src
 COPY app/GrpcClient.csproj .
 RUN dotnet restore
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine
 WORKDIR /app
 COPY --from=build /app .
 

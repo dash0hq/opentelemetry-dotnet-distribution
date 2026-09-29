@@ -69,21 +69,30 @@ a re-pull for the correct platform.
 - `testdata/<scenario>/` — each scenario's `Dockerfile` (layers the injector
   and tracer-home onto an example app) and any files it `COPY`s in (e.g.
   `injector.conf`).
-- `<scenario>/` (e.g. `aspnetcore/`) — the actual test files.
+- `<scenario>/` (e.g. `aspnetcorenet6/`) — the actual test files.
 
 ## Scenarios
 
 | Package            | Example app                  | TFM    | Instrumentation exercised                                                |
 | ------------------- | ----------------------------- | ------ | ------------------------------------------------------------------------- |
-| `aspnetcore`         | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client) — **currently fails, see below** |
+| `aspnetcorenet6`     | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client) — **currently fails, see below** |
 | `aspnetcorenet8`     | `aspnetcore-httpclient-net8`   | net8.0 | Same, twin scenario for the net8.0+ pin path                             |
-| `sqlclient`          | `sqlclient-postgres`           | net6.0 | Npgsql (ADO.NET client spans against a real Postgres backing container) — **currently fails, see below** |
-| `rediscache`         | `redis-cache`                  | net6.0 | StackExchange.Redis (client spans against a real Redis backing container) — **currently fails, see below** |
+| `sqlclient`          | `sqlclient-postgres`           | net6.0-net10.0 | Npgsql (ADO.NET client spans against a real Postgres backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
+| `rediscache`         | `redis-cache`                  | net6.0-net10.0 | StackExchange.Redis (client spans against a real Redis backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
 | `runtimemetrics`     | `aspnetcore-httpclient` (reused) | net6.0 | Runtime + Process metrics (`process.runtime.dotnet.*`, `process.cpu.time`, ...) |
-| `efcore`             | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
+| `efcorenet6`         | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
 | `efcorenet8`         | `efcore-postgres-net8`         | net8.0 | Same, on net8.0 — **currently fails too**, and confirmed to fail identically against a real upstream open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0 build (see below) |
-| `quartz`             | `quartz-job`                   | net6.0 | Quartz (scheduled job execution spans) — **currently fails, see below** |
-| `grpc`               | `grpc-client`                  | net6.0 | Grpc.Net.Client (self-hosted gRPC service + client call) — **currently fails, see below** |
+| `quartz`             | `quartz-job`                   | net6.0-net10.0 | Quartz (scheduled job execution spans), one subtest per TFM — net6.0 subtest currently skipped, see below |
+| `grpc`               | `grpc-client`                  | net6.0-net10.0 | Grpc.Net.Client (self-hosted gRPC service + client call), one subtest per TFM — net6.0 subtest currently skipped, see below |
+
+`sqlclient`, `rediscache`, `quartz`, and `grpc` each multi-target their example
+app's `.csproj` across net6.0-net10.0 and build it via a single
+`DOTNET_VERSION`-parameterized `Dockerfile`/`Dockerfile.musl` per scenario,
+rather than a separate example/testdata directory per TFM (see
+`harness.AppScenario.BuildArgs`). `aspnetcorenet6`/`efcorenet6` and their
+`net8` twins remain separate directories instead, since both are already
+mid-investigation for the unrelated `efcore` bugs below and don't need the
+full net6-net10 sweep.
 
 A caveat worth knowing before writing new assertions: Npgsql's and
 StackExchange.Redis's own instrumentation both still tag spans with the
@@ -99,9 +108,9 @@ produced, before `release` publishes them — a broken package never ships.
 The musl variants aren't separately gated: the scenarios don't depend on
 libc flavor.
 
-### Known failure: `efcore`
+### Known failure: `efcorenet6`
 
-`TestEntityFrameworkCorePostgres` and `TestEntityFrameworkCorePostgresNet8`
+`TestEntityFrameworkCorePostgresNet6` and `TestEntityFrameworkCorePostgresNet8`
 are real, currently-failing regression tests, not a mistake — left in the
 suite deliberately rather than adjusted to match broken behavior, but
 `t.Skip()`-ed so they don't fail CI (and thus block releases) for a bug
@@ -190,16 +199,18 @@ regardless of version) never fires — worth filing against
 
 ### Known failure: ASP.NET Core server spans on net6.0
 
-`TestAspNetCoreHttpClientNet6`, `TestGrpcNetClient`, `TestQuartzJob`,
-`TestRedisCache`, and `TestSqlClientPostgres` are `t.Skip()`-ed for the same
-reason: no ASP.NET Core server span is ever produced on net6.0, even though
-each scenario's own client-side spans (HttpClient, gRPC, Quartz job, Redis,
-Npgsql) arrive fine — this was never actually exercised in CI before the
-`e2e`/`pr-validation` workflows landed, only manually against a locally
-built dev-loop tracer-home, so it went uncaught.
+`TestAspNetCoreHttpClientNet6`'s whole test, and the `"6.0"` subtest of
+`TestGrpcNetClient`, `TestQuartzJob`, `TestRedisCache`, and
+`TestSqlClientPostgres` (each of which also runs net7.0-net10.0 subtests),
+are `t.Skip()`-ed for the same reason: no ASP.NET Core server span is ever
+produced on net6.0, even though each scenario's own client-side spans
+(HttpClient, gRPC, Quartz job, Redis, Npgsql) arrive fine — this was never
+actually exercised in CI before the `e2e`/`pr-validation` workflows landed,
+only manually against a locally built dev-loop tracer-home, so it went
+uncaught. It does not reproduce on net7.0+.
 
 **Not the previously-documented `AspNetCoreInitializer` version-mismatch
-bug.** That bug (`efcore` section above) doesn't reproduce here: routing the
+bug.** That bug (`efcorenet6` section above) doesn't reproduce here: routing the
 tracer's own diagnostic logs to console (`OTEL_DOTNET_AUTO_LOGGER=console`,
 `OTEL_LOG_LEVEL=debug` — see `harness.StartInstrumentedApp`) shows
 `OpenTelemetry.Instrumentation.AspNetCore.dll` loading cleanly at version
@@ -245,4 +256,4 @@ alongside this repo or `dash0hq/opentelemetry-dotnet-instrumentation`.
    connection-string default expects (see `sqlclient/sqlclient_test.go` for
    the pattern) — pass the same network name in `AppScenario.Networks`.
 4. Write the test using `harness.StartInstrumentedApp` and `otelsink`'s
-   query/wait helpers — see `aspnetcore/aspnetcore_test.go`.
+   query/wait helpers — see `aspnetcorenet6/aspnetcorenet6_test.go`.

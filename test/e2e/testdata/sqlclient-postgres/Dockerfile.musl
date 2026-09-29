@@ -15,15 +15,21 @@
 #   app/          - a copy of examples/sqlclient-postgres
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/musl/ for this file
+#
+# DOTNET_VERSION selects which of SqlClientPostgres.csproj's multi-targeted
+# TFMs (net6.0-net10.0) to build and run -- see ./Dockerfile's own header.
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0-alpine AS build
+ARG DOTNET_VERSION=6.0
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-alpine AS build
+ARG DOTNET_VERSION
 WORKDIR /src
 COPY app/SqlClientPostgres.csproj .
 RUN dotnet restore
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}-alpine
 WORKDIR /app
 COPY --from=build /app .
 

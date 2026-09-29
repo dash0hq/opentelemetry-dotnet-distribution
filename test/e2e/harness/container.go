@@ -65,6 +65,13 @@ type AppScenario struct {
 	// Networks, keyed by network name. Usually unneeded — the app is the
 	// caller, not something a backing service needs to resolve by name.
 	NetworkAliases map[string][]string
+	// BuildArgs are additional Docker build args passed to the scenario's
+	// Dockerfile, alongside the harness's own INJECTOR_ARCH/LIBC_FLAVOR
+	// (see StartInstrumentedApp). Used by scenarios that test against
+	// multiple .NET versions from a single multi-targeted example project
+	// and a DOTNET_VERSION-parameterized Dockerfile, instead of a separate
+	// example/testdata directory per version.
+	BuildArgs map[string]string
 }
 
 // StartInstrumentedApp builds and starts scenario's app container with the
@@ -93,13 +100,19 @@ func StartInstrumentedApp(t testing.TB, ctx context.Context, sink *otelsink.Sink
 	maps.Copy(env, sink.Env())
 
 	injectorArch := buildArch
+	buildArgs := map[string]*string{"INJECTOR_ARCH": &injectorArch, "LIBC_FLAVOR": &libcFlavor}
+	for k, v := range scenario.BuildArgs {
+		v := v
+		buildArgs[k] = &v
+	}
+
 	req := testcontainers.ContainerRequest{
 		FromDockerfile: testcontainers.FromDockerfile{
 			Context:       buildContext,
 			Dockerfile:    dockerfile,
 			KeepImage:     true,
 			PrintBuildLog: true,
-			BuildArgs:     map[string]*string{"INJECTOR_ARCH": &injectorArch, "LIBC_FLAVOR": &libcFlavor},
+			BuildArgs:     buildArgs,
 			BuildOptionsModifier: func(opts *client.ImageBuildOptions) {
 				opts.Platforms = []ocispec.Platform{{OS: "linux", Architecture: buildArch}}
 				// Every run builds under a fresh, random image tag (neither

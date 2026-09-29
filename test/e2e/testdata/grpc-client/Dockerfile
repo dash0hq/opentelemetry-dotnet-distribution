@@ -20,18 +20,33 @@
 #   app/          - a copy of examples/grpc-client
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/glibc/ for this file
+#
+# DOTNET_VERSION selects which of GrpcClient.csproj's multi-targeted TFMs
+# (net6.0-net10.0) to build and run, passed by test/e2e/grpc's own test loop
+# via harness.AppScenario.BuildArgs -- one example project and one Dockerfile
+# cover every version instead of a separate directory per TFM.
+ARG DOTNET_VERSION=6.0
 
-# The jammy variant (Ubuntu 22.04) is needed at build time only: Grpc.Tools'
-# bundled arm64 protoc binary requires a newer glibc than the default
-# bullseye-based SDK image ships (GLIBC_2.32+ vs bullseye's 2.31).
-FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS build
+# The jammy variant (Ubuntu 22.04) is needed at build time only, and only for
+# net6.0/net7.0: Grpc.Tools' bundled arm64 protoc binary requires a newer
+# glibc than those versions' default bullseye-based SDK image ships
+# (GLIBC_2.32+ vs bullseye's 2.31). net8.0+ SDK images are bookworm-based
+# (or, for 10.0, Ubuntu-based) and already satisfy this, so no suffix is
+# needed there -- confirmed via `docker run ... ldd --version` against each
+# version's arm64 SDK image. test/e2e/grpc computes this suffix in Go and
+# passes it via BuildArgs; the runtime (aspnet) stage never needs it, since
+# the glibc constraint is build-time-only (the bundled protoc binary).
+ARG SDK_TAG_SUFFIX=""
+
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}${SDK_TAG_SUFFIX} AS build
+ARG DOTNET_VERSION
 WORKDIR /src
 COPY app/GrpcClient.csproj .
 RUN dotnet restore
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}
 WORKDIR /app
 COPY --from=build /app .
 

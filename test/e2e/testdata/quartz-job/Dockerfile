@@ -18,15 +18,22 @@
 #   app/          - a copy of examples/quartz-job
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/glibc/ for this file
+#
+# DOTNET_VERSION selects which of QuartzJob.csproj's multi-targeted TFMs
+# (net6.0-net10.0) to build and run, passed by test/e2e/quartz's own test
+# loop via harness.AppScenario.BuildArgs -- one example project and one
+# Dockerfile cover every version instead of a separate directory per TFM.
+ARG DOTNET_VERSION=6.0
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0-jammy AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
+ARG DOTNET_VERSION
 WORKDIR /src
 COPY app/QuartzJob.csproj .
 RUN dotnet restore
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:6.0-jammy
+FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION}
 WORKDIR /app
 COPY --from=build /app .
 
