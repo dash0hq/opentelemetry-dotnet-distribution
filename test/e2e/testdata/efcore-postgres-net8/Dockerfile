@@ -22,15 +22,27 @@
 #   app/          - a copy of examples/efcore-postgres-net8
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/glibc/ for this file
+#
+# DASH0_DOTNET_VERSION selects which of EfCorePostgresNet8.csproj's
+# multi-targeted TFMs (net8.0-net10.0) to build and run, passed by
+# test/e2e/efcorenet8's own test loop via harness.AppScenario.BuildArgs.
+# Named with a DASH0_ prefix, not just DOTNET_VERSION, because the SDK/aspnet
+# base images below already bake in their own ENV DOTNET_VERSION (their
+# installed runtime's patch version) -- reusing that name would let Docker's
+# classic (non-BuildKit) builder (what testcontainers-go's build path uses)
+# silently resolve ${DOTNET_VERSION} to the image's inherited env value
+# instead of our build arg.
+ARG DASH0_DOTNET_VERSION=8.0
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION} AS build
+ARG DASH0_DOTNET_VERSION
 WORKDIR /src
 COPY app/EfCorePostgresNet8.csproj .
-RUN dotnet restore
+RUN dotnet restore -p:TargetFramework=net${DASH0_DOTNET_VERSION}
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}
 WORKDIR /app
 COPY --from=build /app .
 

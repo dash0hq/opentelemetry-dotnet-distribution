@@ -19,15 +19,21 @@
 #   app/          - a copy of examples/aspnetcore-httpclient-net8
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
 #                   under tracer-home/musl/ for this file
+#
+# DASH0_DOTNET_VERSION selects which of AspNetCoreHttpClientNet8.csproj's
+# multi-targeted TFMs (net8.0-net10.0) to build and run -- see ./Dockerfile's
+# own header for why it's DASH0_-prefixed instead of plain DOTNET_VERSION.
+ARG DASH0_DOTNET_VERSION=8.0
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION}-alpine AS build
+ARG DASH0_DOTNET_VERSION
 WORKDIR /src
 COPY app/AspNetCoreHttpClientNet8.csproj .
-RUN dotnet restore
+RUN dotnet restore -p:TargetFramework=net${DASH0_DOTNET_VERSION}
 COPY app/. .
-RUN dotnet publish -c Release -o /app --no-restore
+RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}-alpine
 WORKDIR /app
 COPY --from=build /app .
 

@@ -76,12 +76,12 @@ a re-pull for the correct platform.
 | Package            | Example app                  | TFM    | Instrumentation exercised                                                |
 | ------------------- | ----------------------------- | ------ | ------------------------------------------------------------------------- |
 | `aspnetcorenet6`     | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client) — **currently fails, see below** |
-| `aspnetcorenet8`     | `aspnetcore-httpclient-net8`   | net8.0 | Same, twin scenario for the net8.0+ pin path                             |
+| `aspnetcorenet8`     | `aspnetcore-httpclient-net8`   | net8.0-net10.0 | Same, one subtest per TFM, twin scenario for the net8.0+ pin path |
 | `sqlclient`          | `sqlclient-postgres`           | net6.0-net10.0 | Npgsql (ADO.NET client spans against a real Postgres backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
 | `rediscache`         | `redis-cache`                  | net6.0-net10.0 | StackExchange.Redis (client spans against a real Redis backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
 | `runtimemetrics`     | `aspnetcore-httpclient` (reused) | net6.0 | Runtime + Process metrics (`process.runtime.dotnet.*`, `process.cpu.time`, ...) |
 | `efcorenet6`         | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
-| `efcorenet8`         | `efcore-postgres-net8`         | net8.0 | Same, on net8.0 — **currently fails too**, and confirmed to fail identically against a real upstream open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0 build (see below) |
+| `efcorenet8`         | `efcore-postgres-net8`         | net8.0-net10.0 | Same, one subtest per TFM — **all currently fail**, and the net8.0 one is confirmed to fail identically against a real upstream open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0 build (see below) |
 | `quartz`             | `quartz-job`                   | net6.0-net10.0 | Quartz (scheduled job execution spans), one subtest per TFM — net6.0 subtest currently skipped, see below |
 | `grpc`               | `grpc-client`                  | net6.0-net10.0 | Grpc.Net.Client (self-hosted gRPC service + client call), one subtest per TFM — net6.0 subtest currently skipped, see below |
 
@@ -89,10 +89,11 @@ a re-pull for the correct platform.
 app's `.csproj` across net6.0-net10.0 and build it via a single
 `DASH0_DOTNET_VERSION`-parameterized `Dockerfile`/`Dockerfile.musl` per scenario,
 rather than a separate example/testdata directory per TFM (see
-`harness.AppScenario.BuildArgs`). `aspnetcorenet6`/`efcorenet6` and their
-`net8` twins remain separate directories instead, since both are already
-mid-investigation for the unrelated `efcore` bugs below and don't need the
-full net6-net10 sweep.
+`harness.AppScenario.BuildArgs`). `aspnetcorenet8`/`efcorenet8` use the same
+mechanism but only across net8.0-net10.0, matching the "net8.0+ pin path"
+they exist to validate. `aspnetcorenet6`/`efcorenet6` stay pinned to net6.0
+alone instead, since they're mid-investigation for the unrelated `efcore`
+bugs below and don't need the full net6-net10 sweep.
 
 A caveat worth knowing before writing new assertions: Npgsql's and
 StackExchange.Redis's own instrumentation both still tag spans with the

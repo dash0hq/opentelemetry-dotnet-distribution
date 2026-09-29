@@ -613,14 +613,38 @@ jobs:
   # delay, say, the x64 E2E run until the slowest of all four build tracks
   # (typically an arm64 one, on the smaller arm64 runner pool) finishes,
   # instead of starting the moment build-x64 itself is ready.
+  #
+  # Each of the four DOES matrix internally on dotnet-version, though: unlike
+  # arch/libc, which .NET version the test apps run doesn't change what a leg
+  # needs -- every version downloads the exact same tarball -- so there's no
+  # differing-`needs` problem here.
 
   e2e-x64:
-    name: E2E tests (x64)
+    name: "E2E tests (x64, ${{ matrix.dotnet-version }})"
     # Release-gate mode from test/e2e/README.md: validate the exact glibc
     # tarball build-x64 just built, not a from-source rebuild.
     needs: build-x64
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # One leg per .NET version the e2e suite covers (see README.md's
+        # Scenarios table): quartz/rediscache/sqlclient/grpc and the
+        # aspnetcorenet8/efcorenet8 twins multi-target net6.0/net8.0 through
+        # net10.0 respectively, each with a subtest per version -- the
+        # `go test -run` pattern below selects just this leg's subtest from
+        # each. extra-tests adds the net6.0-only fixed-TFM scenarios
+        # (aspnetcorenet6, efcorenet6, runtimemetrics), which have no version
+        # subtest of their own, so they must only be listed on exactly one
+        # leg or they'd run once per leg instead of once total.
+        include:
+          - dotnet-version: "6.0"
+            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
+          - dotnet-version: "7.0"
+          - dotnet-version: "8.0"
+          - dotnet-version: "9.0"
+          - dotnet-version: "10.0"
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -647,15 +671,38 @@ jobs:
         # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
         # bug (see their package docs and README.md's "Known failure:
         # efcore" section), not something this run could catch or fix.
-        run: go test -v ./...
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+          EXTRA_TESTS: ${{ matrix.extra-tests }}
+        run: |
+          set -euo pipefail
+          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
+          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
+          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # scenarios on the "6.0" leg only (see the matrix comment above).
+          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
+          if [ -n "$EXTRA_TESTS" ]; then
+            tests="${tests}|${EXTRA_TESTS}"
+          fi
+          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-arm64:
-    name: E2E tests (arm64)
+    name: "E2E tests (arm64, ${{ matrix.dotnet-version }})"
     # Release-gate mode from test/e2e/README.md: validate the exact glibc
     # tarball build-arm64 just built, not a from-source rebuild.
     needs: build-arm64
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dotnet-version: "6.0"
+            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
+          - dotnet-version: "7.0"
+          - dotnet-version: "8.0"
+          - dotnet-version: "9.0"
+          - dotnet-version: "10.0"
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -682,15 +729,38 @@ jobs:
         # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
         # bug (see their package docs and README.md's "Known failure:
         # efcore" section), not something this run could catch or fix.
-        run: go test -v ./...
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+          EXTRA_TESTS: ${{ matrix.extra-tests }}
+        run: |
+          set -euo pipefail
+          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
+          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
+          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # scenarios on the "6.0" leg only (see the matrix comment above).
+          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
+          if [ -n "$EXTRA_TESTS" ]; then
+            tests="${tests}|${EXTRA_TESTS}"
+          fi
+          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-musl-x64:
-    name: E2E tests (musl-x64)
+    name: "E2E tests (musl-x64, ${{ matrix.dotnet-version }})"
     # Release-gate mode from test/e2e/README.md, same as e2e-x64 above, but
     # against the musl tarball build-x64-musl just built.
     needs: build-x64-musl
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dotnet-version: "6.0"
+            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
+          - dotnet-version: "7.0"
+          - dotnet-version: "8.0"
+          - dotnet-version: "9.0"
+          - dotnet-version: "10.0"
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -718,15 +788,38 @@ jobs:
         # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
         # bug (see their package docs and README.md's "Known failure:
         # efcore" section), not something this run could catch or fix.
-        run: go test -v ./...
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+          EXTRA_TESTS: ${{ matrix.extra-tests }}
+        run: |
+          set -euo pipefail
+          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
+          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
+          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # scenarios on the "6.0" leg only (see the matrix comment above).
+          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
+          if [ -n "$EXTRA_TESTS" ]; then
+            tests="${tests}|${EXTRA_TESTS}"
+          fi
+          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-musl-arm64:
-    name: E2E tests (musl-arm64)
+    name: "E2E tests (musl-arm64, ${{ matrix.dotnet-version }})"
     # Release-gate mode from test/e2e/README.md, same as e2e-musl-x64 above,
     # but against the musl tarball build-arm64-musl just built.
     needs: build-arm64-musl
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dotnet-version: "6.0"
+            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
+          - dotnet-version: "7.0"
+          - dotnet-version: "8.0"
+          - dotnet-version: "9.0"
+          - dotnet-version: "10.0"
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -754,4 +847,17 @@ jobs:
         # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
         # bug (see their package docs and README.md's "Known failure:
         # efcore" section), not something this run could catch or fix.
-        run: go test -v ./...
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+          EXTRA_TESTS: ${{ matrix.extra-tests }}
+        run: |
+          set -euo pipefail
+          # quartz/rediscache/sqlclient/grpc (net6.0-net10.0) and the
+          # aspnetcorenet8/efcorenet8 twins (net8.0-net10.0) each carry a
+          # subtest per version; EXTRA_TESTS adds the net6.0-only fixed-TFM
+          # scenarios on the "6.0" leg only (see the matrix comment above).
+          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
+          if [ -n "$EXTRA_TESTS" ]; then
+            tests="${tests}|${EXTRA_TESTS}"
+          fi
+          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
