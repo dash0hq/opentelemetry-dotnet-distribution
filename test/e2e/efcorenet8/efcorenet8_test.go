@@ -44,7 +44,7 @@ import (
 // dotNetVersions are the TFMs examples/efcore-postgres-net8 multi-targets,
 // matching what test/e2e/testdata/efcore-postgres-net8's Dockerfile/
 // Dockerfile.musl accept via their DASH0_DOTNET_VERSION build arg.
-var dotNetVersions = []string{"8.0", "9.0", "10.0"}
+var dotNetVersions = harness.Net8PlusDotNetVersions
 
 func TestEntityFrameworkCorePostgresNet8(t *testing.T) {
 	ctx := context.Background()

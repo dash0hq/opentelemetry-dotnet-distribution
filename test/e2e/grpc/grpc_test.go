@@ -24,7 +24,7 @@ import (
 // dotNetVersions are the TFMs examples/grpc-client multi-targets, matching
 // what test/e2e/testdata/grpc-client's Dockerfile/Dockerfile.musl accept via
 // their DASH0_DOTNET_VERSION build arg.
-var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
+var dotNetVersions = harness.AllDotNetVersions
 
 func TestGrpcNetClient(t *testing.T) {
 	ctx := context.Background()

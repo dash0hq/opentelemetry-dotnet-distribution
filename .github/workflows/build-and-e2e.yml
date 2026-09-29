@@ -88,6 +88,13 @@ jobs:
           token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Fetch upstream release tags for MinVer
+        # The fork carries no tags of its own, so without this MinVer falls back to
+        # 0.0.0.0 for every assembly, which breaks runtime version checks (e.g.
+        # PluginApi.dll gets rejected at load time). Real upstream shares history
+        # with the fork, so fetching its tags here is enough for MinVer to find one.
+        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+
       - name: Pin the SDK ./build.sh runs under
         # The checked-out commit (from .upstream-ref) has no global.json, so
         # without a pin `dotnet` resolves to the highest SDK it finds on the
@@ -517,21 +524,14 @@ jobs:
       fail-fast: false
       matrix:
         # One leg per .NET version the e2e suite covers (see README.md's
-        # Scenarios table): the
-        # aspnetcorenet8/efcorenet8 twins multi-target net6.0/net8.0 through
-        # net10.0 respectively, each with a subtest per version -- the
-        # `go test -run` pattern below selects just this leg's subtest from
-        # each. extra-tests adds the net6.0-only fixed-TFM scenarios
-        # (aspnetcorenet6, efcorenet6, runtimemetrics), which have no version
-        # subtest of their own, so they must only be listed on exactly one
-        # leg or they'd run once per leg instead of once total.
-        include:
-          - dotnet-version: "6.0"
-            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
-          - dotnet-version: "7.0"
-          - dotnet-version: "8.0"
-          - dotnet-version: "9.0"
-          - dotnet-version: "10.0"
+        # Scenarios table). The `go test -run` pattern below matches every
+        # package's subtest for this leg's version, so a new
+        # version-swept scenario is picked up automatically -- no list to
+        # update here. Scenarios with no version subtest of their own
+        # (aspnetcorenet6, efcorenet6, runtimemetrics) gate on LEG_VERSION
+        # themselves so they only actually run on the "6.0" leg, instead of
+        # once per leg.
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -560,16 +560,9 @@ jobs:
         # efcore" section), not something this run could catch or fix.
         env:
           LEG_VERSION: ${{ matrix.dotnet-version }}
-          EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # EXTRA_TESTS adds the net6.0-only fixed-TFM
-          # scenarios on the "6.0" leg only (see the matrix comment above).
-          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
-          if [ -n "$EXTRA_TESTS" ]; then
-            tests="${tests}|${EXTRA_TESTS}"
-          fi
-          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-arm64:
     name: "E2E tests (arm64, ${{ matrix.dotnet-version }})"
@@ -581,13 +574,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - dotnet-version: "6.0"
-            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
-          - dotnet-version: "7.0"
-          - dotnet-version: "8.0"
-          - dotnet-version: "9.0"
-          - dotnet-version: "10.0"
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -616,16 +603,9 @@ jobs:
         # efcore" section), not something this run could catch or fix.
         env:
           LEG_VERSION: ${{ matrix.dotnet-version }}
-          EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # EXTRA_TESTS adds the net6.0-only fixed-TFM
-          # scenarios on the "6.0" leg only (see the matrix comment above).
-          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
-          if [ -n "$EXTRA_TESTS" ]; then
-            tests="${tests}|${EXTRA_TESTS}"
-          fi
-          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-musl-x64:
     name: "E2E tests (musl-x64, ${{ matrix.dotnet-version }})"
@@ -637,13 +617,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - dotnet-version: "6.0"
-            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
-          - dotnet-version: "7.0"
-          - dotnet-version: "8.0"
-          - dotnet-version: "9.0"
-          - dotnet-version: "10.0"
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -673,16 +647,9 @@ jobs:
         # efcore" section), not something this run could catch or fix.
         env:
           LEG_VERSION: ${{ matrix.dotnet-version }}
-          EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # EXTRA_TESTS adds the net6.0-only fixed-TFM
-          # scenarios on the "6.0" leg only (see the matrix comment above).
-          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
-          if [ -n "$EXTRA_TESTS" ]; then
-            tests="${tests}|${EXTRA_TESTS}"
-          fi
-          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
 
   e2e-musl-arm64:
     name: "E2E tests (musl-arm64, ${{ matrix.dotnet-version }})"
@@ -694,13 +661,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - dotnet-version: "6.0"
-            extra-tests: "TestAspNetCoreHttpClientNet6|TestRuntimeAndProcessMetrics|TestEntityFrameworkCorePostgresNet6"
-          - dotnet-version: "7.0"
-          - dotnet-version: "8.0"
-          - dotnet-version: "9.0"
-          - dotnet-version: "10.0"
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -730,13 +691,6 @@ jobs:
         # efcore" section), not something this run could catch or fix.
         env:
           LEG_VERSION: ${{ matrix.dotnet-version }}
-          EXTRA_TESTS: ${{ matrix.extra-tests }}
         run: |
           set -euo pipefail
-          # EXTRA_TESTS adds the net6.0-only fixed-TFM
-          # scenarios on the "6.0" leg only (see the matrix comment above).
-          tests="TestQuartzJob|TestRedisCache|TestSqlClientPostgres|TestGrpcNetClient|TestAspNetCoreHttpClientNet8|TestEntityFrameworkCorePostgresNet8"
-          if [ -n "$EXTRA_TESTS" ]; then
-            tests="${tests}|${EXTRA_TESTS}"
-          fi
-          go test -v -run "^(${tests})\$/^${LEG_VERSION//./\\.}\$" ./...
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...

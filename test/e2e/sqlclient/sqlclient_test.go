@@ -21,7 +21,7 @@ import (
 // dotNetVersions are the TFMs examples/sqlclient-postgres multi-targets,
 // matching what test/e2e/testdata/sqlclient-postgres's Dockerfile/
 // Dockerfile.musl accept via their DASH0_DOTNET_VERSION build arg.
-var dotNetVersions = []string{"6.0", "7.0", "8.0", "9.0", "10.0"}
+var dotNetVersions = harness.AllDotNetVersions
 
 func TestSqlClientPostgres(t *testing.T) {
 	ctx := context.Background()
