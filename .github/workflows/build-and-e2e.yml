@@ -26,50 +26,14 @@ env:
 jobs:
   build-native-x64:
     name: Build native x64 (ubuntu 16.04 container)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Checkout distribution repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Build native library in Ubuntu 16.04 container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build -f distribution/docker/ubuntu1604-x64.dockerfile .
-          # This container only has .NET SDK 9.0.316 installed, and its
-          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
-          # (once the checked-out commit has one) pins the SDK to 10.0.302
-          # for other build paths; global.json has no MSBuild-style
-          # conditions, so drop it for this one container-only step instead
-          # of letting dotnet try to fetch and run an incompatible SDK
-          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
-          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
-          # here). Restored afterward for hygiene, though this job doesn't
-          # use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-glibc --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native x64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-x64
-          path: bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04
+      dockerfile: docker/ubuntu1604-x64.dockerfile
+      os_type: linux-glibc
+      artifact_suffix: x64
+    secrets: inherit
 
   build-managed:
     name: Build managed tracer-home
@@ -165,342 +129,67 @@ jobs:
   build-x64:
     name: Build linux-x64 tracer-home
     needs: [build-native-x64, build-managed]
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - name: Download managed tracer-home artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: managed-tracer-home
-          path: bin/tracer-home
-
-      - name: Download native x64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-x64
-          path: native-x64
-
-      - name: Add native library to tracer-home
-        run: |
-          set -euo pipefail
-          src="native-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst_dir="./bin/tracer-home/linux-x64"
-          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          mkdir -p "$dst_dir"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-x64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04
+      artifact_suffix: x64
 
   build-native-x64-musl:
     name: Build native musl x64 (alpine container)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Checkout distribution repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Build native library in Alpine container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build-musl -f distribution/docker/alpine322-x64-musl.dockerfile .
-          # Drop global.json for this container-only step for the same
-          # reason as the glibc native jobs above: a repo-root global.json
-          # (once the checked-out commit has one) could pin an SDK feature
-          # band this container doesn't have. Restored afterward for
-          # hygiene, though this job doesn't use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-musl --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build-musl \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native musl x64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-musl-x64
-          path: bin/tracer-home/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04
+      dockerfile: docker/alpine322-x64-musl.dockerfile
+      os_type: linux-musl
+      artifact_suffix: musl-x64
+    secrets: inherit
 
   build-x64-musl:
     name: Build linux-musl-x64 tracer-home
     needs: [build-native-x64-musl, build-managed]
-    runs-on: ubuntu-22.04
-    timeout-minutes: 15
-    steps:
-      - name: Download managed tracer-home artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: managed-tracer-home
-          path: bin/tracer-home
-
-      - name: Download native musl x64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-musl-x64
-          path: native-x64-musl
-
-      - name: Add native library to tracer-home
-        run: |
-          set -euo pipefail
-          src="native-x64-musl/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst_dir="./bin/tracer-home/linux-musl-x64"
-          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          # managed-tracer-home never contains any linux-*/ directory (see
-          # build-managed's own strip step) -- nothing to remove first here,
-          # just create the directory and place it.
-          mkdir -p "$dst_dir"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-musl-x64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04
+      artifact_suffix: musl-x64
 
   build-native-arm64:
     name: Build native arm64 (ubuntu 16.04 container)
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-arm64.dockerfile below -- see
-        # that file's header for why we build from our own versioned
-        # Dockerfile instead of upstream's. Checked out after upstream,
-        # into its own distribution/ subdirectory: actions/checkout wipes
-        # the whole target directory before checking out (regardless of
-        # the `clean` input, which only controls post-checkout cleanup of
-        # a repeat checkout of the *same* repo), so checking out upstream
-        # second would delete this one.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Build native library in Ubuntu 16.04 container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build -f distribution/docker/ubuntu1604-arm64.dockerfile .
-          # This container only has .NET SDK 9.0.316 installed, and its
-          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
-          # (once the checked-out commit has one) pins the SDK to 10.0.302
-          # for other build paths; global.json has no MSBuild-style
-          # conditions, so drop it for this one container-only step instead
-          # of letting dotnet try to fetch and run an incompatible SDK
-          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
-          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
-          # here). Restored afterward for hygiene, though this job doesn't
-          # use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-glibc --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native arm64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-arm64
-          path: bin/tracer-home/linux-arm64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04-arm
+      dockerfile: docker/ubuntu1604-arm64.dockerfile
+      os_type: linux-glibc
+      artifact_suffix: arm64
+    secrets: inherit
 
   build-arm64:
     name: Build linux-arm64 tracer-home
     needs: [build-native-arm64, build-managed]
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 15
-    steps:
-      - name: Download managed tracer-home artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: managed-tracer-home
-          path: bin/tracer-home
-
-      - name: Download native arm64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-arm64
-          path: native-arm64
-
-      - name: Add native library to tracer-home
-        run: |
-          set -euo pipefail
-          src="native-arm64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst_dir="./bin/tracer-home/linux-arm64"
-          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          # managed-tracer-home never contains any linux-*/ directory (see
-          # build-managed's own strip step) -- nothing to remove first here,
-          # just create the directory and place it.
-          mkdir -p "$dst_dir"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-arm64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04-arm
+      artifact_suffix: arm64
 
   build-native-arm64-musl:
     name: Build native musl arm64 (alpine container)
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Checkout distribution repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Build native library in Alpine container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build-arm64-musl -f distribution/docker/alpine322-arm64-musl.dockerfile .
-          # Drop global.json for this container-only step
-          # for the same reason as the glibc native jobs above: a repo-root
-          # global.json (once the checked-out commit has one) could pin an
-          # SDK feature band this container doesn't have. Restored afterward
-          # for hygiene, though this job doesn't use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-musl --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build-arm64-musl \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native musl arm64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-musl-arm64
-          path: bin/tracer-home/linux-musl-arm64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04-arm
+      dockerfile: docker/alpine322-arm64-musl.dockerfile
+      os_type: linux-musl
+      artifact_suffix: musl-arm64
+    secrets: inherit
 
   build-arm64-musl:
     name: Build linux-musl-arm64 tracer-home
     needs: [build-native-arm64-musl, build-managed]
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 15
-    steps:
-      - name: Download managed tracer-home artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: managed-tracer-home
-          path: bin/tracer-home
-
-      - name: Download native musl arm64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-musl-arm64
-          path: native-arm64-musl
-
-      - name: Add native library to tracer-home
-        run: |
-          set -euo pipefail
-          src="native-arm64-musl/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst_dir="./bin/tracer-home/linux-musl-arm64"
-          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          # managed-tracer-home never contains any linux-*/ directory (see
-          # build-managed's own strip step) -- nothing to remove first here,
-          # just create the directory and place it.
-          mkdir -p "$dst_dir"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-musl-arm64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04-arm
+      artifact_suffix: musl-arm64
 
   # The four e2e-* jobs below are near-duplicates of each other (differing
   # only in which tarball they validate, which runner they need, and
