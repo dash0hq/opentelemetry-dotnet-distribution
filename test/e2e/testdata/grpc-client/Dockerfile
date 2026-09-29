@@ -42,7 +42,7 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}${SDK_TAG_SUFFIX} AS build
 ARG DOTNET_VERSION
 WORKDIR /src
 COPY app/GrpcClient.csproj .
-RUN dotnet restore
+RUN dotnet restore -p:TargetFramework=net${DOTNET_VERSION}
 COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore -f net${DOTNET_VERSION}
 
