@@ -5,6 +5,7 @@ package rediscache_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,15 +18,17 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
-func TestRedisCache(t *testing.T) {
-	t.Skip("known regression: no ASP.NET Core server span is ever produced on " +
-		"net6.0 -- see test/e2e/README.md's \"Known failure: ASP.NET Core " +
-		"server spans on net6.0\" section. Unskip to check whether it's fixed " +
-		"upstream.")
+// dotNetVersions are the TFMs examples/redis-cache multi-targets, matching
+// what test/e2e/testdata/redis-cache's Dockerfile/Dockerfile.musl accept via
+// their DASH0_DOTNET_VERSION build arg.
+var dotNetVersions = harness.AllDotNetVersions
 
-	sink := otelsink.Start(t)
+func TestRedisCache(t *testing.T) {
 	ctx := context.Background()
 
+	// One backing service shared by every version subtest below -- it's
+	// just a Redis instance, unrelated to which .NET version the app under
+	// test runs, so there's no reason to pay for five of them.
 	nw := harness.NewNetwork(t, ctx)
 	harness.StartBackingService(t, ctx, harness.BackingServiceOptions{
 		Image:      "redis:7-alpine",
@@ -34,27 +37,51 @@ func TestRedisCache(t *testing.T) {
 		WaitingFor: wait.ForExec([]string{"redis-cli", "ping"}),
 	})
 
-	container := harness.StartInstrumentedApp(t, ctx, sink, harness.AppScenario{
-		ExampleDir:  "examples/redis-cache",
-		TestdataDir: "test/e2e/testdata/redis-cache",
-		ExposedPort: "8080/tcp",
-		WaitPath:    "/",
-		Networks:    []string{nw},
-	})
+	for _, dotnetVersion := range dotNetVersions {
+		t.Run(dotnetVersion, func(t *testing.T) {
+			if dotnetVersion == "6.0" {
+				t.Skip("known regression: no ASP.NET Core server span is ever produced on " +
+					"net6.0 -- see test/e2e/README.md's \"Known failure: ASP.NET Core " +
+					"server spans on net6.0\" section. Unskip to check whether it's fixed " +
+					"upstream.")
+			}
 
-	status, body := harness.ContainerHTTPGet(t, ctx, container, "8080/tcp", "/cache")
-	require.Equal(t, 200, status, "unexpected response from /cache: %s", body)
+			sink := otelsink.Start(t)
 
-	traces := sink.WaitForTraces(t, 30*time.Second, func(tr *otelsink.Traces) bool {
-		return tr.WithKind(tracepb.Span_SPAN_KIND_CLIENT).Len() > 0
-	})
+			container := harness.StartInstrumentedApp(t, ctx, sink, harness.AppScenario{
+				ExampleDir:  "examples/redis-cache",
+				TestdataDir: "test/e2e/testdata/redis-cache",
+				ExposedPort: "8080/tcp",
+				WaitPath:    "/",
+				Networks:    []string{nw},
+				BuildArgs:   map[string]string{"DASH0_DOTNET_VERSION": dotnetVersion},
+			})
 
-	serverSpans := traces.WithKind(tracepb.Span_SPAN_KIND_SERVER)
-	assert.GreaterOrEqual(t, serverSpans.Len(), 1, "expected a server span for GET /cache, got: %v", traces.Names())
+			status, body := harness.ContainerHTTPGet(t, ctx, container, "8080/tcp", "/cache")
+			require.Equal(t, 200, status, "unexpected response from /cache: %s", body)
 
-	// The StackExchange.Redis instrumentation also predates the OTel semconv
-	// db.system -> db.system.name rename (Dash0's backend normalizes this on
-	// ingestion, but the raw span still carries the older key).
-	redisSpans := traces.WithSpanAttributeValue("db.system", "redis")
-	assert.GreaterOrEqual(t, redisSpans.Len(), 1, "expected db.system=redis on the StackExchange.Redis client spans, got: %v", traces.Names())
+			traces := sink.WaitForTraces(t, 30*time.Second, func(tr *otelsink.Traces) bool {
+				return tr.WithKind(tracepb.Span_SPAN_KIND_CLIENT).Len() > 0
+			})
+
+			serverSpans := traces.WithKind(tracepb.Span_SPAN_KIND_SERVER)
+			assert.GreaterOrEqual(t, serverSpans.Len(), 1, "expected a server span for GET /cache, got: %v", traces.Names())
+
+			// The StackExchange.Redis instrumentation also predates the OTel semconv
+			// db.system -> db.system.name rename (Dash0's backend normalizes this on
+			// ingestion, but the raw span still carries the older key).
+			redisSpans := traces.WithSpanAttributeValue("db.system", "redis")
+			assert.GreaterOrEqual(t, redisSpans.Len(), 1, "expected db.system=redis on the StackExchange.Redis client spans, got: %v", traces.Names())
+
+			require.NotZero(t, traces.Len())
+			runtimeVersion := ""
+			for _, kv := range traces.Spans()[0].Resource.GetAttributes() {
+				if kv.GetKey() == "process.runtime.version" {
+					runtimeVersion = otelsink.AttrString(kv.GetValue())
+				}
+			}
+			assert.True(t, strings.HasPrefix(runtimeVersion, dotnetVersion+"."),
+				"expected process.runtime.version to start with %q, got %q", dotnetVersion+".", runtimeVersion)
+		})
+	}
 }

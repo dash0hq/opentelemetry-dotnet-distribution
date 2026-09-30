@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package efcore exercises OpenTelemetry.Instrumentation.EntityFrameworkCore
+// Package efcorenet6 exercises OpenTelemetry.Instrumentation.EntityFrameworkCore
 // (via the Npgsql EF Core provider).
 //
 // As of writing this test is a known, reproducible failure, not a
@@ -47,7 +47,7 @@
 // today, on any .NET/Npgsql version combination, until either Npgsql adds
 // ActivitySource tracing to NpgsqlBatch, or the suppression is corrected to
 // not defer to a source that will never fire.
-package efcore_test
+package efcorenet6_test
 
 import (
 	"context"
@@ -63,7 +63,7 @@ import (
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
-func TestEntityFrameworkCorePostgres(t *testing.T) {
+func TestEntityFrameworkCorePostgresNet6(t *testing.T) {
 	t.Skip("known upstream bug, not a regression -- see the package doc above and " +
 		"test/e2e/README.md's \"Known failure: efcore\" section. Unskip to check " +
 		"whether Npgsql has added NpgsqlBatch tracing or the EF Core suppression " +

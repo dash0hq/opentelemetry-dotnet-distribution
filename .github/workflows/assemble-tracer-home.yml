@@ -1,0 +1,83 @@
+name: assemble-tracer-home
+
+# Reusable workflow: combines the shared managed tracer-home (built once by
+# build-and-e2e.yml's build-managed job) with one track's native profiler
+# library (build-native.yml's output) into a release tarball. Called once
+# per track from build-and-e2e.yml.
+#
+# Kept as a second reusable workflow rather than folding this into
+# build-native.yml, and both kept as four separately-named calls rather than
+# matrixed: a job's `needs:` can only target another job as a whole, not one
+# leg of an upstream matrix -- it waits for every leg to finish. Matrixing
+# either step here would force e.g. the x64 track to block on arm64-musl's
+# native build finishing too, and matrixing both together would additionally
+# force every track to wait for build-managed before even starting its own
+# native build, which today runs fully in parallel with it (see
+# build-and-e2e.yml's build-native-* jobs: no `needs:` on them at all).
+# Two reusable workflows, each called four times with per-track inputs,
+# dedupes the YAML without changing that dependency graph: the calling jobs
+# are still named build-x64/build-arm64/build-x64-musl/build-arm64-musl,
+# each needing its matching build-native-* job and build-managed
+# individually, exactly as before this was factored out.
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: "Runner label to assemble on"
+        required: true
+        type: string
+      artifact_suffix:
+        description: "Track identifier, e.g. x64, arm64, musl-x64, musl-arm64 -- used for the native/release artifact names and the bin/tracer-home/linux-<suffix> path"
+        required: true
+        type: string
+
+jobs:
+  assemble:
+    name: "Assemble tracer-home (${{ inputs.artifact_suffix }})"
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Download managed tracer-home artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: managed-tracer-home
+          path: bin/tracer-home
+
+      - name: Download native artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: native-linux-${{ inputs.artifact_suffix }}
+          path: native
+
+      - name: Add native library to tracer-home
+        run: |
+          set -euo pipefail
+          src="native/OpenTelemetry.AutoInstrumentation.Native.so"
+          dst_dir="./bin/tracer-home/linux-${{ inputs.artifact_suffix }}"
+          dst="${dst_dir}/OpenTelemetry.AutoInstrumentation.Native.so"
+          test -f "$src"
+          # managed-tracer-home never contains any linux-*/ directory (see
+          # build-managed's own strip step) -- nothing to remove first here,
+          # just create the directory and place it.
+          mkdir -p "$dst_dir"
+          cp "$src" "$dst"
+          file "$dst"
+
+      - name: Package tracer-home
+        run: |
+          set -euo pipefail
+          out="dash0-opentelemetry-dotnet-instrumentation-linux-${{ inputs.artifact_suffix }}.tar.gz"
+          # Debug symbols for the native profiler aren't needed at runtime
+          # and are ~8x the size of the .so itself (see issue #2).
+          find bin/tracer-home -name '*.so.debug' -print -delete
+          ls -la bin/tracer-home
+          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
+          ls -lh "${GITHUB_WORKSPACE}/${out}"
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: release-linux-${{ inputs.artifact_suffix }}
+          path: dash0-opentelemetry-dotnet-instrumentation-linux-${{ inputs.artifact_suffix }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7

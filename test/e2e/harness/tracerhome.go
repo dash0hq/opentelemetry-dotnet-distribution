@@ -45,3 +45,25 @@ func TracerHome(t testing.TB) string {
 	}
 	return dir
 }
+
+// LibcFlavorEnvVar names the environment variable LibcFlavor reads.
+const LibcFlavorEnvVar = "DASH0_E2E_LIBC_FLAVOR"
+
+// LibcFlavor returns which libc flavor to build and run scenario containers
+// against: "glibc" (the default, and the only flavor build-and-e2e.yml
+// gates) or "musl". This must match how the tracer-home TracerHome points
+// at was actually built -- scripts/build-tracer-home-linux-<arch>.sh for
+// glibc, scripts/build-tracer-home-linux-<arch>-musl.sh for musl -- since it
+// only controls how the harness stages and runs the container, not which
+// tracer-home content it reads.
+func LibcFlavor(t testing.TB) string {
+	t.Helper()
+	flavor := os.Getenv(LibcFlavorEnvVar)
+	if flavor == "" {
+		return "glibc"
+	}
+	if flavor != "glibc" && flavor != "musl" {
+		t.Fatalf(`%s=%s: must be "glibc" or "musl"`, LibcFlavorEnvVar, flavor)
+	}
+	return flavor
+}

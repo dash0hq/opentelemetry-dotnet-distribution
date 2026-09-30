@@ -1,35 +1,33 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds examples/aspnetcore-httpclient-net8 with the real OTel injector and
-# the tracer-home under test wired in via LD_PRELOAD, for E2E testing.
+# Builds examples/grpc-client with the real OTel injector and the
+# tracer-home under test wired in via LD_PRELOAD, for E2E testing.
 #
-# The net8.0 twin of the aspnetcore-httpclient scenario, validating that
-# instrumentation-image packaging changes don't regress ASP.NET Core tracing
-# above the net6.0/net7.0 floor.
-#
-# glibc-only. See Dockerfile.musl for the Alpine counterpart.
+# musl-only Alpine counterpart of ./Dockerfile -- see that file's header for
+# why this scenario keeps the two flavors as fully separate files instead of
+# the ARG LIBC_FLAVOR-branched single-file pattern every other scenario
+# uses. Selected by harness.stageBuildContext whenever DASH0_E2E_LIBC_FLAVOR
+# is "musl" and this file is present alongside the scenario's Dockerfile.
 #
 # Build context is staged by test/e2e/harness (see container.go): it is not
 # the repo itself, but a temp dir containing:
-#   app/          - a copy of examples/aspnetcore-httpclient-net8
+#   app/          - a copy of examples/grpc-client
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
-#                   under tracer-home/glibc/ for this file
+#                   under tracer-home/musl/ for this file
 #
-# DASH0_DOTNET_VERSION selects which of AspNetCoreHttpClientNet8.csproj's
-# multi-targeted TFMs (net8.0-net10.0) to build and run, passed by
-# test/e2e/aspnetcorenet8's own test loop via harness.AppScenario.BuildArgs.
-# Named with a DASH0_ prefix, not just DOTNET_VERSION, because the SDK/aspnet
-# base images below already bake in their own ENV DOTNET_VERSION (their
-# installed runtime's patch version) -- reusing that name would let Docker's
-# classic (non-BuildKit) builder (what testcontainers-go's build path uses)
-# silently resolve ${DOTNET_VERSION} to the image's inherited env value
-# instead of our build arg.
-ARG DASH0_DOTNET_VERSION=8.0
+# DASH0_DOTNET_VERSION selects which of GrpcClient.csproj's multi-targeted TFMs
+# (net6.0-net10.0) to build and run -- see ./Dockerfile's own header.
+#
+# Unlike ./Dockerfile, no jammy-vs-bullseye glibc-version pin is ever needed
+# at build time -- Alpine's own toolchain is new enough regardless of
+# version, so there's no SDK_TAG_SUFFIX equivalent here.
 
-FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION} AS build
+ARG DASH0_DOTNET_VERSION=6.0
+
+FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION}-alpine AS build
 ARG DASH0_DOTNET_VERSION
 WORKDIR /src
-COPY app/AspNetCoreHttpClientNet8.csproj .
+COPY app/GrpcClient.csproj .
 RUN dotnet restore -p:TargetFramework=net${DASH0_DOTNET_VERSION}
 COPY app/. .
 RUN dotnet publish -c Release -o /app --no-restore -f net${DASH0_DOTNET_VERSION}
@@ -45,13 +43,13 @@ ARG INJECTOR_ARCH=amd64
 RUN curl -fsSL -o /usr/lib/libotelinject.so \
       "https://github.com/open-telemetry/opentelemetry-injector/releases/download/${INJECTOR_VERSION}/libotelinject_${INJECTOR_ARCH}.so"
 
-FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}
+FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}-alpine
 WORKDIR /app
 COPY --from=build /app .
 
 # The Dash0 .NET distribution under test, laid out exactly as the release
-# tarballs extract (net/, linux-x64/, instrument.sh, ...) -- already nested
-# under glibc/ by the harness.
+# tarballs extract (net/, linux-musl-x64/, instrument.sh, ...) -- already
+# nested under musl/ by the harness.
 COPY tracer-home/ /dash0-instrumentation/dotnet/
 
 # The real OTel injector -- fetched in the build stage above (see its own
@@ -62,7 +60,6 @@ COPY injector.conf /etc/opentelemetry/injector.conf
 ENV LD_PRELOAD=/usr/lib/libotelinject.so
 ENV OTEL_INJECTOR_CONFIG_FILE=/etc/opentelemetry/injector.conf
 ENV OTEL_INJECTOR_LOG_LEVEL=debug
-ENV OTEL_SERVICE_NAME=aspnetcore-httpclient-net8-e2e
-ENV ASPNETCORE_URLS=http://+:8080
+ENV OTEL_SERVICE_NAME=grpc-client-e2e
 EXPOSE 8080
-ENTRYPOINT ["dotnet", "AspNetCoreHttpClientNet8.dll"]
+ENTRYPOINT ["dotnet", "GrpcClient.dll"]

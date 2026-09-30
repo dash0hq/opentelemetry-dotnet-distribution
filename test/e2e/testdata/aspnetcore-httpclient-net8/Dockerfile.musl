@@ -7,26 +7,20 @@
 # instrumentation-image packaging changes don't regress ASP.NET Core tracing
 # above the net6.0/net7.0 floor.
 #
-# glibc-only. See Dockerfile.musl for the Alpine counterpart.
+# musl-only Alpine counterpart of ./Dockerfile
 #
 # Build context is staged by test/e2e/harness (see container.go): it is not
 # the repo itself, but a temp dir containing:
 #   app/          - a copy of examples/aspnetcore-httpclient-net8
 #   tracer-home/  - the tracer-home under test (harness.TracerHome), staged
-#                   under tracer-home/glibc/ for this file
+#                   under tracer-home/musl/ for this file
 #
 # DASH0_DOTNET_VERSION selects which of AspNetCoreHttpClientNet8.csproj's
-# multi-targeted TFMs (net8.0-net10.0) to build and run, passed by
-# test/e2e/aspnetcorenet8's own test loop via harness.AppScenario.BuildArgs.
-# Named with a DASH0_ prefix, not just DOTNET_VERSION, because the SDK/aspnet
-# base images below already bake in their own ENV DOTNET_VERSION (their
-# installed runtime's patch version) -- reusing that name would let Docker's
-# classic (non-BuildKit) builder (what testcontainers-go's build path uses)
-# silently resolve ${DOTNET_VERSION} to the image's inherited env value
-# instead of our build arg.
+# multi-targeted TFMs (net8.0-net10.0) to build and run -- see ./Dockerfile's
+# own header for why it's DASH0_-prefixed instead of plain DOTNET_VERSION.
 ARG DASH0_DOTNET_VERSION=8.0
 
-FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION} AS build
+FROM mcr.microsoft.com/dotnet/sdk:${DASH0_DOTNET_VERSION}-alpine AS build
 ARG DASH0_DOTNET_VERSION
 WORKDIR /src
 COPY app/AspNetCoreHttpClientNet8.csproj .
@@ -45,13 +39,13 @@ ARG INJECTOR_ARCH=amd64
 RUN curl -fsSL -o /usr/lib/libotelinject.so \
       "https://github.com/open-telemetry/opentelemetry-injector/releases/download/${INJECTOR_VERSION}/libotelinject_${INJECTOR_ARCH}.so"
 
-FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}
+FROM mcr.microsoft.com/dotnet/aspnet:${DASH0_DOTNET_VERSION}-alpine
 WORKDIR /app
 COPY --from=build /app .
 
 # The Dash0 .NET distribution under test, laid out exactly as the release
-# tarballs extract (net/, linux-x64/, instrument.sh, ...) -- already nested
-# under glibc/ by the harness.
+# tarballs extract (net/, linux-musl-x64/, instrument.sh, ...) -- already
+# nested under musl/ by the harness.
 COPY tracer-home/ /dash0-instrumentation/dotnet/
 
 # The real OTel injector -- fetched in the build stage above (see its own

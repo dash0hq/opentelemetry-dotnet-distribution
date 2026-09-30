@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package aspnetcore is the first real E2E scenario: it builds
+// Package aspnetcorenet6 is the first real E2E scenario: it builds
 // examples/aspnetcore-httpclient with the real OTel injector and the
 // tracer-home under test, and asserts that ASP.NET Core server spans and
 // HttpClient client spans actually arrive — proving the harness works end
 // to end, not just that the tracer-home builds.
-package aspnetcore_test
+package aspnetcorenet6_test
 
 import (
 	"context"

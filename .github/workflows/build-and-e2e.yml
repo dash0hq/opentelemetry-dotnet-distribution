@@ -6,10 +6,6 @@ name: build-and-e2e
 # by prepare-release, gating the actual publish) and pr-validation.yml
 # (building the SHA currently pinned in .upstream-ref, on every PR) so the
 # build+test logic has one definition instead of two drifting copies.
-#
-# Only glibc is covered here -- the E2E scenarios don't exercise anything
-# libc-flavor-specific, so musl tracer-homes (built separately in
-# release.yml's own build-musl job) aren't gated by this workflow.
 on:
   workflow_call:
     inputs:
@@ -30,71 +26,21 @@ env:
 jobs:
   build-native-x64:
     name: Build native x64 (ubuntu 16.04 container)
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04
+      dockerfile: docker/ubuntu1604-x64.dockerfile
+      os_type: linux-glibc
+      artifact_suffix: x64
+    secrets: inherit
 
-      - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-x64.dockerfile below -- see that
-        # file's header for why we build from our own versioned Dockerfile
-        # instead of upstream's. Checked out after upstream, into its own
-        # distribution/ subdirectory: actions/checkout wipes the whole
-        # target directory before checking out (regardless of the `clean`
-        # input, which only controls post-checkout cleanup of a repeat
-        # checkout of the *same* repo), so checking out upstream second
-        # would delete this one.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Build native library in Ubuntu 16.04 container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build -f distribution/docker/ubuntu1604-x64.dockerfile .
-          # This container only has .NET SDK 9.0.316 installed, and its
-          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
-          # (once the checked-out commit has one) pins the SDK to 10.0.302
-          # for other build paths; global.json has no MSBuild-style
-          # conditions, so drop it for this one container-only step instead
-          # of letting dotnet try to fetch and run an incompatible SDK
-          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
-          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
-          # here). Restored afterward for hygiene, though this job doesn't
-          # use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-glibc --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native x64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-x64
-          path: bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
-
-  build-x64:
-    name: Build linux-x64 tracer-home
-    needs: build-native-x64
+  build-managed:
+    name: Build managed tracer-home
+    # Shared by all four build-* jobs below (x64/arm64 x glibc/musl). The
+    # managed profiler assemblies are portable IL -- identical regardless of
+    # which CPU architecture or libc flavor builds them. Building the managed side
+    # once here, rather than once per track.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
@@ -107,12 +53,10 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
+        # The fork carries no tags of its own, so without this MinVer falls back to
+        # 0.0.0.0 for every assembly, which breaks runtime version checks (e.g.
+        # PluginApi.dll gets rejected at load time). Real upstream shares history
+        # with the fork, so fetching its tags here is enough for MinVer to find one.
         run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
 
       - name: Pin the SDK ./build.sh runs under
@@ -151,12 +95,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
         with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+          # Building/publishing net6.0-net9.0 code only needs each TFM's
+          # reference-assembly package, which NuGet restores automatically
+          # regardless of which SDKs are installed.
+          dotnet-version: 10.0.100
 
       - name: Build tracer-home
         # Skip the standalone Restore target; it restores the whole solution,
@@ -165,240 +107,134 @@ jobs:
         # projects it depends on.
         run: ./build.sh BuildTracer
 
-      - name: Download native x64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-x64
-          path: native-x64
-
-      - name: Swap in ubuntu-16.04-built native library
+      - name: Strip native binaries from managed tracer-home
         run: |
           set -euo pipefail
-          src="native-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst="./bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          test -f "$dst"
-          rm "$dst"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
+          # Every build-* job supplies its own native .so from its matching
+          # build-native-* job instead, so strip it here, keeping only the genuinely
+          # arch/libc-independent managed output.
+          find bin/tracer-home -mindepth 1 -maxdepth 1 \
+            ! -name LICENSE ! -name VERSION ! -name instrument.sh ! -name net \
+            -exec rm -rf {} +
           ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
 
-      - name: Upload release asset
+      - name: Upload managed tracer-home artifact
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: release-linux-x64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz
+          name: managed-tracer-home
+          path: bin/tracer-home
           if-no-files-found: error
           retention-days: 7
+
+  build-x64:
+    name: Build linux-x64 tracer-home
+    needs: [build-native-x64, build-managed]
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04
+      artifact_suffix: x64
+
+  build-native-x64-musl:
+    name: Build native musl x64 (alpine container)
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04
+      dockerfile: docker/alpine322-x64-musl.dockerfile
+      os_type: linux-musl
+      artifact_suffix: musl-x64
+    secrets: inherit
+
+  build-x64-musl:
+    name: Build linux-musl-x64 tracer-home
+    needs: [build-native-x64-musl, build-managed]
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04
+      artifact_suffix: musl-x64
 
   build-native-arm64:
     name: Build native arm64 (ubuntu 16.04 container)
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Checkout distribution repo
-        # Needed only for docker/ubuntu1604-arm64.dockerfile below -- see
-        # that file's header for why we build from our own versioned
-        # Dockerfile instead of upstream's. Checked out after upstream,
-        # into its own distribution/ subdirectory: actions/checkout wipes
-        # the whole target directory before checking out (regardless of
-        # the `clean` input, which only controls post-checkout cleanup of
-        # a repeat checkout of the *same* repo), so checking out upstream
-        # second would delete this one.
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          path: distribution
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Build native library in Ubuntu 16.04 container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-native-build -f distribution/docker/ubuntu1604-arm64.dockerfile .
-          # This container only has .NET SDK 9.0.316 installed, and its
-          # ancient glibc cannot run .NET 10 at all. A repo-root global.json
-          # (once the checked-out commit has one) pins the SDK to 10.0.302
-          # for other build paths; global.json has no MSBuild-style
-          # conditions, so drop it for this one container-only step instead
-          # of letting dotnet try to fetch and run an incompatible SDK
-          # (mirrors build-ubuntu1604-native-container.yml's own "rm -f
-          # global.json" step upstream, and scripts/build-tracer-home-linux-*.sh
-          # here). Restored afterward for hygiene, though this job doesn't
-          # use global.json again.
-          rm -f global.json
-          docker run -e OS_TYPE=linux-glibc --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-native-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
-          git checkout -- global.json 2>/dev/null || true
-
-      - name: Upload native arm64 artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: native-linux-arm64
-          path: bin/tracer-home/linux-arm64/OpenTelemetry.AutoInstrumentation.Native.so
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04-arm
+      dockerfile: docker/ubuntu1604-arm64.dockerfile
+      os_type: linux-glibc
+      artifact_suffix: arm64
+    secrets: inherit
 
   build-arm64:
     name: Build linux-arm64 tracer-home
-    needs: build-native-arm64
-    runs-on: ubuntu-22.04-arm
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ inputs.upstream_sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
+    needs: [build-native-arm64, build-managed]
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04-arm
+      artifact_suffix: arm64
 
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
+  build-native-arm64-musl:
+    name: Build native musl arm64 (alpine container)
+    uses: ./.github/workflows/build-native.yml
+    with:
+      upstream_sha: ${{ inputs.upstream_sha }}
+      runner: ubuntu-22.04-arm
+      dockerfile: docker/alpine322-arm64-musl.dockerfile
+      os_type: linux-musl
+      artifact_suffix: musl-arm64
+    secrets: inherit
 
-      - name: Pin the SDK ./build.sh runs under
-        # The checked-out commit (from .upstream-ref) has no global.json, so
-        # without a pin `dotnet` resolves to the highest SDK it finds on the
-        # runner. build/_build.csproj and
-        # tools/DependencyListGenerator/DependencyListGenerator.csproj both
-        # target net10.0 (falling back to net9.0 only when the MSBuild
-        # property IsLegacyUbuntu is set -- which is for the Ubuntu 16.04
-        # native-build container, not this runner), so the build driver
-        # itself genuinely needs some .NET 10 SDK to run.
-        #
-        # It can't be just any .NET 10 SDK, though: 10.0.400 specifically
-        # throws Microsoft.Build.Exceptions.InvalidProjectFileException
-        # ("Could not load file or assembly 'NuGet.Frameworks, Version=
-        # 7.9.0.0' ... manifest definition does not match") from Nuke's
-        # in-process ProjectModelTasks.ParseProject call (TransientDepen-
-        # denciesGenerator) -- confirmed to reproduce identically whether
-        # 10.0.400 is the runner's ambient preinstalled SDK or one freshly
-        # installed by actions/setup-dotnet just below, so this is a
-        # version-specific SDK/Nuke incompatibility, not an install-
-        # provenance issue. Pinned to 10.0.100 (the first stable 10.0
-        # release, GA 2025-11-11) with rollForward: disable to force
-        # exactly that feature band instead of rolling forward into 10.0.400
-        # again.
-        run: |
-          cat > global.json <<'EOF'
-          {
-            "sdk": {
-              "version": "10.0.100",
-              "rollForward": "disable"
-            }
-          }
-          EOF
+  build-arm64-musl:
+    name: Build linux-musl-arm64 tracer-home
+    needs: [build-native-arm64-musl, build-managed]
+    uses: ./.github/workflows/assemble-tracer-home.yml
+    with:
+      runner: ubuntu-22.04-arm
+      artifact_suffix: musl-arm64
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@3951f0dfe7a07e2313ec93c75700083e2005cbab # v4.3.0
-        with:
-          dotnet-version: |
-            6.0.428
-            7.0.410
-            8.0.406
-            9.0.200
-            10.0.100
+  # The four e2e-* jobs below are near-duplicates of each other (differing
+  # only in which tarball they validate, which runner they need, and
+  # DASH0_E2E_LIBC_FLAVOR), kept as separate jobs rather than one matrixed
+  # job specifically. As a single matrix job, every matrix leg
+  # would block on all four build-* jobs even though e.g. the x64 tarball
+  # has nothing to do with the arm64-musl build. That false dependency would
+  # delay, say, the x64 E2E run until the slowest of all four build tracks
+  # finishes, instead of starting the moment build-x64 itself is ready.
+  #
+  # Each of the four DOES matrix internally on dotnet-version.
 
-      - name: Build tracer-home
-        run: ./build.sh BuildTracer
-
-      - name: Download native arm64 artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
-        with:
-          name: native-linux-arm64
-          path: native-arm64
-
-      - name: Swap in ubuntu-16.04-built native library
-        run: |
-          set -euo pipefail
-          src="native-arm64/OpenTelemetry.AutoInstrumentation.Native.so"
-          dst="./bin/tracer-home/linux-arm64/OpenTelemetry.AutoInstrumentation.Native.so"
-          test -f "$src"
-          test -f "$dst"
-          rm "$dst"
-          cp "$src" "$dst"
-          file "$dst"
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-arm64
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
-  e2e:
-    name: E2E tests (${{ matrix.arch }})
+  e2e-x64:
+    name: "E2E tests (x64, ${{ matrix.dotnet-version }})"
     # Release-gate mode from test/e2e/README.md: validate the exact glibc
-    # tarball build-x64/build-arm64 just built, not a from-source rebuild.
-    needs: [build-x64, build-arm64]
+    # tarball build-x64 just built, not a from-source rebuild.
+    needs: build-x64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-22.04
-          - arch: arm64
-            runner: ubuntu-22.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+        # One leg per .NET version the e2e suite covers (see README.md's
+        # Scenarios table). The `go test -run` pattern below matches every
+        # package's subtest for this leg's version, so a new
+        # version-swept scenario is picked up automatically -- no list to
+        # update here. Scenarios with no version subtest of their own
+        # (aspnetcorenet6, efcorenet6, runtimemetrics) gate on LEG_VERSION
+        # themselves so they only actually run on the "6.0" leg, instead of
+        # once per leg.
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
     steps:
       - name: Checkout distribution repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Download release-linux-${{ matrix.arch }} tracer-home
+      - name: Download release-linux-x64 tracer-home
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
         with:
-          name: release-linux-${{ matrix.arch }}
+          name: release-linux-x64
 
       - name: Extract tracer-home
         run: |
           set -euo pipefail
           mkdir -p tracer-home
-          tar -C tracer-home -xzf "dash0-opentelemetry-dotnet-instrumentation-linux-${{ matrix.arch }}.tar.gz"
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-x64.tar.gz
           echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
 
       - name: Setup Go
@@ -411,4 +247,139 @@ jobs:
         # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
         # bug (see their package docs and README.md's "Known failure:
         # efcore" section), not something this run could catch or fix.
-        run: go test -v ./...
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+        run: |
+          set -euo pipefail
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
+
+  e2e-arm64:
+    name: "E2E tests (arm64, ${{ matrix.dotnet-version }})"
+    # Release-gate mode from test/e2e/README.md: validate the exact glibc
+    # tarball build-arm64 just built, not a from-source rebuild.
+    needs: build-arm64
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-arm64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-arm64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-arm64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+        run: |
+          set -euo pipefail
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
+
+  e2e-musl-x64:
+    name: "E2E tests (musl-x64, ${{ matrix.dotnet-version }})"
+    # Release-gate mode from test/e2e/README.md, same as e2e-x64 above, but
+    # against the musl tarball build-x64-musl just built.
+    needs: build-x64-musl
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-musl-x64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-x64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-musl-x64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+          echo "DASH0_E2E_LIBC_FLAVOR=musl" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+        run: |
+          set -euo pipefail
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...
+
+  e2e-musl-arm64:
+    name: "E2E tests (musl-arm64, ${{ matrix.dotnet-version }})"
+    # Release-gate mode from test/e2e/README.md, same as e2e-musl-x64 above,
+    # but against the musl tarball build-arm64-musl just built.
+    needs: build-arm64-musl
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        dotnet-version: ["6.0", "7.0", "8.0", "9.0", "10.0"]
+    steps:
+      - name: Checkout distribution repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download release-linux-musl-arm64 tracer-home
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          name: release-linux-musl-arm64
+
+      - name: Extract tracer-home
+        run: |
+          set -euo pipefail
+          mkdir -p tracer-home
+          tar -C tracer-home -xzf dash0-opentelemetry-dotnet-instrumentation-linux-musl-arm64.tar.gz
+          echo "DASH0_E2E_TRACER_HOME=${GITHUB_WORKSPACE}/tracer-home" >> "$GITHUB_ENV"
+          echo "DASH0_E2E_LIBC_FLAVOR=musl" >> "$GITHUB_ENV"
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: test/e2e/go.mod
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        # efcore/efcorenet8 are t.Skip()-ed: a real, root-caused upstream
+        # bug (see their package docs and README.md's "Known failure:
+        # efcore" section), not something this run could catch or fix.
+        env:
+          LEG_VERSION: ${{ matrix.dotnet-version }}
+        run: |
+          set -euo pipefail
+          go test -v -run "/^${LEG_VERSION//./\\.}\$" ./...

@@ -10,6 +10,7 @@ package runtimemetrics_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -19,6 +20,15 @@ import (
 )
 
 func TestRuntimeAndProcessMetrics(t *testing.T) {
+	// This scenario isn't version-parameterized (no t.Run(dotnetVersion, ...)
+	// loop, unlike quartz/rediscache/sqlclient/grpc), so CI's per-version
+	// matrix (build-and-e2e.yml) would otherwise run it once per leg for no
+	// extra coverage. LEG_VERSION is that matrix's env var; only act on it
+	// when set, so a plain local `go test ./...` still always runs this.
+	if v := os.Getenv("LEG_VERSION"); v != "" && v != "6.0" {
+		t.Skip("only runs on the LEG_VERSION=6.0 leg -- see comment above")
+	}
+
 	sink := otelsink.Start(t)
 	ctx := context.Background()
 

@@ -1,0 +1,83 @@
+name: build-native
+
+# Reusable workflow: builds one arch/libc track's native profiler library in
+# its container (Ubuntu 16.04 for glibc, Alpine for musl) and uploads it as
+# an artifact. Called once per track from build-and-e2e.yml, as four
+# separately-named jobs rather than a matrix -- see assemble-tracer-home.yml's
+# header for why a matrix doesn't work here.
+on:
+  workflow_call:
+    inputs:
+      upstream_sha:
+        description: "Commit SHA of dash0hq/opentelemetry-dotnet-instrumentation to build"
+        required: true
+        type: string
+      runner:
+        description: "Runner label to build on"
+        required: true
+        type: string
+      dockerfile:
+        description: "Path (relative to the distribution repo checkout) to the native-build Dockerfile"
+        required: true
+        type: string
+      os_type:
+        description: "OS_TYPE passed to the native build container: linux-glibc or linux-musl"
+        required: true
+        type: string
+      artifact_suffix:
+        description: "Track identifier, e.g. x64, arm64, musl-x64, musl-arm64 -- used for the artifact name and the bin/tracer-home/linux-<suffix> output path"
+        required: true
+        type: string
+    secrets:
+      REPOSITORY_FULL_ACCESS_GITHUB_TOKEN:
+        required: false
+
+jobs:
+  build:
+    name: "Build native (${{ inputs.artifact_suffix }})"
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: dash0hq/opentelemetry-dotnet-instrumentation
+          ref: ${{ inputs.upstream_sha }}
+          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Checkout distribution repo
+        # Into its own distribution/ subdirectory, checked out after
+        # upstream: actions/checkout wipes the whole target directory before
+        # checking out, so checking out upstream second would delete this
+        # one.
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: distribution
+
+      - name: Build native library in container
+        run: |
+          set -euo pipefail
+          docker build -t dash0-native-build -f "distribution/${{ inputs.dockerfile }}" .
+          # This container only has an older .NET SDK installed, and its
+          # ancient glibc/musl cannot run .NET 10 at all. A repo-root
+          # global.json (once the checked-out commit has one) pins the SDK
+          # to a newer feature band for other build paths; global.json has
+          # no MSBuild-style conditions, so drop it for this one
+          # container-only step instead of letting dotnet try to fetch and
+          # run an incompatible SDK. Restored afterward for hygiene, though
+          # this job doesn't use global.json again.
+          rm -f global.json
+          docker run -e OS_TYPE=${{ inputs.os_type }} --rm \
+            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
+            dash0-native-build \
+            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
+          git checkout -- global.json 2>/dev/null || true
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: native-linux-${{ inputs.artifact_suffix }}
+          path: bin/tracer-home/linux-${{ inputs.artifact_suffix }}/OpenTelemetry.AutoInstrumentation.Native.so
+          if-no-files-found: error
+          retention-days: 7

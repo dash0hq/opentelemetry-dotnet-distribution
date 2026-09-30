@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a linux-x64 glibc tracer-home from a local checkout of
+# Builds a linux-x64 musl tracer-home from a local checkout of
 # dash0hq/opentelemetry-dotnet-instrumentation, for the E2E test suite's
 # "build once, reuse across tests" dev-loop mode (test/e2e/harness).
 #
@@ -10,7 +10,7 @@
 # that workflow, to avoid touching the working release pipeline.
 #
 # Usage:
-#   ./scripts/build-tracer-home-linux-x64.sh [source-dir]
+#   ./scripts/build-tracer-home-linux-x64-musl.sh [source-dir]
 #
 # source-dir defaults to ../opentelemetry-dotnet-instrumentation (a sibling
 # checkout) or $DASH0_INSTRUMENTATION_SOURCE_DIR. Builds whatever is
@@ -44,7 +44,7 @@ echo "--- Building native library in Ubuntu 16.04 container (linux/amd64) ---"
 # build/run platform so this also works correctly (under QEMU emulation)
 # from an arm64 dev machine, instead of silently building for the host
 # architecture and pulling in incompatible arm64 packages.
-docker build --platform linux/amd64 -t dash0-native-build -f "${distribution_dir}/docker/ubuntu1604-x64.dockerfile" .
+docker build --platform linux/amd64 -t dash0-native-build-musl -f "${distribution_dir}/docker/alpine322-x64-musl.dockerfile" .
 # The native CMake build dir is shared (and hardcoded) across all platforms'
 # CompileNativeSrc* Nuke targets (see Build.Steps.{MacOS,Linux}.cs). If a
 # previous run left a CMakeCache.txt here generated from the host's own
@@ -63,15 +63,15 @@ rm -rf src/OpenTelemetry.AutoInstrumentation.Native/build
 # upstream). Restored afterward since source_dir is a real working tree,
 # not an ephemeral CI checkout.
 rm -f global.json
-docker run --platform linux/amd64 -e OS_TYPE=linux-glibc --rm \
+docker run --platform linux/amd64 -e OS_TYPE=linux-musl --rm \
   --mount type=bind,source="${source_dir}",target=/project \
-  dash0-native-build \
+  dash0-native-build-musl \
   /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildNativeWorkflow'
 git checkout -- global.json 2>/dev/null || true
 
-native_so="bin/tracer-home/linux-x64/OpenTelemetry.AutoInstrumentation.Native.so"
+native_so="bin/tracer-home/linux-musl-x64/OpenTelemetry.AutoInstrumentation.Native.so"
 test -f "${native_so}"
-cp "${native_so}" /tmp/dash0-e2e-native-x64.so
+cp "${native_so}" /tmp/dash0-e2e-native-x64-musl.so
 
 echo "--- Building managed tracer-home (requires .NET SDKs 6/7/8/9 installed) ---"
 # The native CMake build dir is shared (and hardcoded) across all platforms'
@@ -88,7 +88,7 @@ echo "--- Swapping in Ubuntu-16.04-built native library ---"
 if [ -f "${native_so}" ]; then
   rm "${native_so}"
 fi
-cp /tmp/dash0-e2e-native-x64.so "${native_so}"
+cp /tmp/dash0-e2e-native-x64-musl.so "${native_so}"
 file "${native_so}"
 
 echo "tracer-home ready at ${source_dir}/bin/tracer-home"
