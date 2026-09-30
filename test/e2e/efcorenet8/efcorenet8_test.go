@@ -65,7 +65,7 @@ func TestEntityFrameworkCorePostgresNet8(t *testing.T) {
 		WaitingFor: wait.ForExec([]string{"pg_isready", "-U", "postgres"}),
 	})
 
-	for _, dotnetVersion := range dotNetVersions {
+	for _, dotnetVersion := range harness.VersionsUnderTest(t, dotNetVersions) {
 		t.Run(dotnetVersion, func(t *testing.T) {
 			t.Skip("known upstream bug, not a regression -- see the package doc above and " +
 				"test/e2e/README.md's \"Known failure: efcore\" section. Unskip to check " +

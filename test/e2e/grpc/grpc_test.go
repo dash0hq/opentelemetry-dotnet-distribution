@@ -29,7 +29,7 @@ var dotNetVersions = harness.AllDotNetVersions
 func TestGrpcNetClient(t *testing.T) {
 	ctx := context.Background()
 
-	for _, dotnetVersion := range dotNetVersions {
+	for _, dotnetVersion := range harness.VersionsUnderTest(t, dotNetVersions) {
 		t.Run(dotnetVersion, func(t *testing.T) {
 			if dotnetVersion == "6.0" {
 				t.Skip("known regression: no ASP.NET Core server span is ever produced on " +
@@ -55,7 +55,7 @@ func TestGrpcNetClient(t *testing.T) {
 				WaitPath:    "/",
 				BuildArgs: map[string]string{
 					"DASH0_DOTNET_VERSION": dotnetVersion,
-					"SDK_TAG_SUFFIX": sdkTagSuffix,
+					"SDK_TAG_SUFFIX":       sdkTagSuffix,
 				},
 			})
 

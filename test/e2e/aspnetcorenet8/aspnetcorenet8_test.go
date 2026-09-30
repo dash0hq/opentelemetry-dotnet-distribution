@@ -33,7 +33,7 @@ var dotNetVersions = harness.Net8PlusDotNetVersions
 func TestAspNetCoreHttpClientNet8(t *testing.T) {
 	ctx := context.Background()
 
-	for _, dotnetVersion := range dotNetVersions {
+	for _, dotnetVersion := range harness.VersionsUnderTest(t, dotNetVersions) {
 		t.Run(dotnetVersion, func(t *testing.T) {
 			sink := otelsink.Start(t)
 
