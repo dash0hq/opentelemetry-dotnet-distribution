@@ -37,7 +37,7 @@ func TestRedisCache(t *testing.T) {
 		WaitingFor: wait.ForExec([]string{"redis-cli", "ping"}),
 	})
 
-	for _, dotnetVersion := range dotNetVersions {
+	for _, dotnetVersion := range harness.VersionsUnderTest(t, dotNetVersions) {
 		t.Run(dotnetVersion, func(t *testing.T) {
 			if dotnetVersion == "6.0" {
 				t.Skip("known regression: no ASP.NET Core server span is ever produced on " +
