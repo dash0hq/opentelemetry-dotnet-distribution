@@ -37,3 +37,39 @@ jobs:
     with:
       upstream_sha: ${{ needs.resolve-upstream-ref.outputs.sha }}
     secrets: inherit
+
+  gate:
+    name: PR validation gate
+    # The single status check main's branch protection requires.
+    #
+    # Every other job is reachable from build-and-e2e's own needs graph, and
+    # a reusable-workflow caller job only reports success when all of the
+    # jobs it called succeeded -- so gating on this one context gates on the
+    # whole matrix. The point is that it keeps doing so for free: adding a
+    # .NET version, an architecture, or a libc flavor changes the set of
+    # reported check names but not this one, whereas enumerating the leaf
+    # jobs in branch protection means re-editing the protection settings on
+    # every such change. Getting that wrong is silent -- a required context
+    # that is never reported leaves PRs stuck on "Expected", and a leaf job
+    # that stops being required stops gating without anything saying so.
+    needs: [resolve-upstream-ref, build-and-e2e]
+    # Without always(), a failure upstream skips this job, and GitHub counts
+    # a skipped required check as satisfied -- exactly backwards.
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check that every upstream job succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS"
+          # Anything that is not "success" fails the gate, including
+          # "skipped" and "cancelled": a job that did not run did not
+          # validate anything.
+          failed=$(jq -r 'to_entries[] | select(.value.result != "success") | "\(.key)=\(.value.result)"' <<< "$NEEDS")
+          if [ -n "$failed" ]; then
+            echo "::error::PR validation gate failed: ${failed//$'\n'/, }"
+            exit 1
+          fi
+          echo "All upstream jobs succeeded."
