@@ -80,86 +80,9 @@ jobs:
       upstream_sha: ${{ needs.resolve-upstream.outputs.sha }}
     secrets: inherit
 
-  build-musl:
-    name: Build linux-musl-${{ matrix.arch }} tracer-home (alpine container)
-    needs: resolve-upstream
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-22.04
-          - arch: arm64
-            runner: ubuntu-22.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    steps:
-      - name: Checkout upstream
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: ${{ env.UPSTREAM_REPO }}
-          ref: ${{ needs.resolve-upstream.outputs.sha }}
-          token: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - name: Fetch upstream release tags for MinVer
-        # The dash0hq fork carries no release tags of its own (see .dash0-branch-meta.yaml — it's pinned to a raw
-        # commit SHA, not a tag, pending U12). MinVer derives every assembly's version from the closest reachable
-        # git tag; with none available it silently falls back to 0.0.0.0 for everything. That breaks runtime
-        # assembly-version checks — e.g. OpenTelemetry.AutoInstrumentation.PluginApi.dll gets rejected at load
-        # time (FileNotFoundException) because its consumers expect a real >=1.0.0 version. The real upstream repo
-        # shares full history with the fork, so fetching its tags here is enough for MinVer to find one.
-        run: git fetch --tags --quiet https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation.git
-
-      - name: Patch alpine.dockerfile
-        run: |
-          set -euo pipefail
-          # 1. Strip the stale SHA check for dotnet-install.sh (same issue as
-          #    ubuntu1604.dockerfile — Microsoft rotated the script). No-op
-          #    now that dotnet-install.sh is vendored via COPY instead of
-          #    curled, but harmless to keep in case that regresses.
-          sed -i '/sha256sum -c/d' ./docker/alpine.dockerfile
-          # Previously stripped apk exact-version pins here (e.g.
-          # clang=17.0.6-r1) because Alpine 3.20's apk repos drifted past
-          # them. Dropped: upstream's Dockerfile now declares those versions
-          # as ARG ... =X.Y.Z-rN defaults consumed via clang21="${VAR}", and
-          # the same blind regex was stripping the ARG defaults themselves,
-          # leaving e.g. clang21="" and failing apk with "not a valid world
-          # dependency".
-          echo "--- patched alpine.dockerfile ---"
-          cat ./docker/alpine.dockerfile
-
-      - name: Build tracer-home in alpine container
-        run: |
-          set -euo pipefail
-          docker build -t dash0-alpine-build -f ./docker/alpine.dockerfile .
-          docker run -e OS_TYPE=linux-musl --rm \
-            --mount type=bind,source="${GITHUB_WORKSPACE}",target=/project \
-            dash0-alpine-build \
-            /bin/sh -c 'export PATH="$PATH:/usr/share/dotnet" && git config --global --add safe.directory /project && ./build.sh BuildTracer'
-
-      - name: Package tracer-home
-        run: |
-          set -euo pipefail
-          out="dash0-opentelemetry-dotnet-instrumentation-linux-musl-${{ matrix.arch }}.tar.gz"
-          # Debug symbols for the native profiler aren't needed at runtime
-          # and are ~8x the size of the .so itself (see issue #2).
-          find bin/tracer-home -name '*.so.debug' -print -delete
-          ls -la bin/tracer-home
-          tar -C bin/tracer-home -czf "${GITHUB_WORKSPACE}/${out}" .
-          ls -lh "${GITHUB_WORKSPACE}/${out}"
-
-      - name: Upload release asset
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
-        with:
-          name: release-linux-musl-${{ matrix.arch }}
-          path: dash0-opentelemetry-dotnet-instrumentation-linux-musl-${{ matrix.arch }}.tar.gz
-          if-no-files-found: error
-          retention-days: 7
-
   release:
     name: Publish GitHub Release
-    needs: [resolve-upstream, build-and-e2e, build-musl]
+    needs: [resolve-upstream, build-and-e2e]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
