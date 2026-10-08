@@ -111,12 +111,47 @@ jobs:
         with:
           name: release-linux-musl-arm64
 
+      - name: Resolve OTel SDK/instrumentation versions for release notes
+        id: otel-versions
+        env:
+          GH_TOKEN: ${{ secrets.REPOSITORY_FULL_ACCESS_GITHUB_TOKEN }}
+          SHA: ${{ needs.resolve-upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+          sdk_version=$(gh api "repos/${UPSTREAM_REPO}/contents/Directory.Packages.props?ref=${SHA}" --jq '.content' \
+            | base64 -d \
+            | grep -oP '(?<=<PackageVersion Include="OpenTelemetry" Version=")[^"]+')
+          if [ -z "${sdk_version}" ]; then
+            echo "::error::could not find the OpenTelemetry package version in Directory.Packages.props"
+            exit 1
+          fi
+          echo "sdk_version=${sdk_version}" >> "$GITHUB_OUTPUT"
+
+          # CHANGELOG.md's first versioned heading below "## [Unreleased]" is
+          # the last official opentelemetry-dotnet-instrumentation release
+          # this build sits on top of. Best-effort: if the format ever
+          # changes, just omit this line from the notes rather than fail the
+          # release over it.
+          base_release=$(gh api "repos/${UPSTREAM_REPO}/contents/CHANGELOG.md?ref=${SHA}" --jq '.content' \
+            | base64 -d \
+            | grep -m1 -oP '(?<=^## \[)v[0-9]+\.[0-9]+\.[0-9]+(?=\])' || true)
+          echo "base_release=${base_release}" >> "$GITHUB_OUTPUT"
+
       - name: Write release notes
         env:
           SHA: ${{ needs.resolve-upstream.outputs.sha }}
+          OTEL_SDK_VERSION: ${{ steps.otel-versions.outputs.sdk_version }}
+          OTEL_BASE_RELEASE: ${{ steps.otel-versions.outputs.base_release }}
         run: |
+          set -euo pipefail
+          otel_line="Targets [OpenTelemetry SDK/API \`${OTEL_SDK_VERSION}\`](https://github.com/open-telemetry/opentelemetry-dotnet/releases/tag/core-${OTEL_SDK_VERSION})."
+          if [ -n "${OTEL_BASE_RELEASE}" ]; then
+            otel_line="${otel_line} Based on [opentelemetry-dotnet-instrumentation \`${OTEL_BASE_RELEASE}\`](https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/tag/${OTEL_BASE_RELEASE})."
+          fi
           cat > release-notes.md <<EOF
           Dash0 build of [\`${{ env.UPSTREAM_REPO }}\`](https://github.com/${{ env.UPSTREAM_REPO }}/commit/${SHA}) at commit \`${SHA}\`.
+
+          ${otel_line}
 
           ## Assets
 
