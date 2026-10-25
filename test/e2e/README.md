@@ -75,15 +75,15 @@ a re-pull for the correct platform.
 
 | Package            | Example app                  | TFM    | Instrumentation exercised                                                |
 | ------------------- | ----------------------------- | ------ | ------------------------------------------------------------------------- |
-| `aspnetcorenet6`     | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client) — **currently fails, see below** |
+| `aspnetcorenet6`     | `aspnetcore-httpclient`        | net6.0 | ASP.NET Core (server) + HttpClient (client)                              |
 | `aspnetcorenet8`     | `aspnetcore-httpclient-net8`   | net8.0-net10.0 | Same, one subtest per TFM, twin scenario for the net8.0+ pin path |
-| `sqlclient`          | `sqlclient-postgres`           | net6.0-net10.0 | Npgsql (ADO.NET client spans against a real Postgres backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
-| `rediscache`         | `redis-cache`                  | net6.0-net10.0 | StackExchange.Redis (client spans against a real Redis backing container), one subtest per TFM — net6.0 subtest currently skipped, see below |
+| `sqlclient`          | `sqlclient-postgres`           | net6.0-net10.0 | Npgsql (ADO.NET client spans against a real Postgres backing container), one subtest per TFM |
+| `rediscache`         | `redis-cache`                  | net6.0-net10.0 | StackExchange.Redis (client spans against a real Redis backing container), one subtest per TFM |
 | `runtimemetrics`     | `aspnetcore-httpclient` (reused) | net6.0 | Runtime + Process metrics (`process.runtime.dotnet.*`, `process.cpu.time`, ...) |
 | `efcorenet6`         | `efcore-postgres`              | net6.0 | EntityFrameworkCore (Npgsql provider) — **currently fails, see below**   |
 | `efcorenet8`         | `efcore-postgres-net8`         | net8.0-net10.0 | Same, one subtest per TFM — **all currently fail**, and the net8.0 one is confirmed to fail identically against a real upstream open-telemetry/opentelemetry-dotnet-instrumentation v1.16.0 build (see below) |
-| `quartz`             | `quartz-job`                   | net6.0-net10.0 | Quartz (scheduled job execution spans), one subtest per TFM — net6.0 subtest currently skipped, see below |
-| `grpc`               | `grpc-client`                  | net6.0-net10.0 | Grpc.Net.Client (self-hosted gRPC service + client call), one subtest per TFM — net6.0 subtest currently skipped, see below |
+| `quartz`             | `quartz-job`                   | net6.0-net10.0 | Quartz (scheduled job execution spans), one subtest per TFM              |
+| `grpc`               | `grpc-client`                  | net6.0-net10.0 | Grpc.Net.Client (self-hosted gRPC service + client call), one subtest per TFM |
 
 `sqlclient`, `rediscache`, `quartz`, and `grpc` each multi-target their example
 app's `.csproj` across net6.0-net10.0 and build it via a single
@@ -92,8 +92,10 @@ rather than a separate example/testdata directory per TFM (see
 `harness.AppScenario.BuildArgs`). `aspnetcorenet8`/`efcorenet8` use the same
 mechanism but only across net8.0-net10.0, matching the "net8.0+ pin path"
 they exist to validate. `aspnetcorenet6`/`efcorenet6` stay pinned to net6.0
-alone instead, since they're mid-investigation for the unrelated `efcore`
-bugs below and don't need the full net6-net10 sweep.
+alone instead: each is the net6.0 half of a deliberate net6.0-vs-net8.0+
+pair, there to catch exactly the kind of divergence the ASP.NET Core source
+registration bug below turned out to be, so the full net6-net10 sweep would
+only duplicate what their net8.0+ twins already cover.
 
 A caveat worth knowing before writing new assertions: Npgsql's and
 StackExchange.Redis's own instrumentation both still tag spans with the
@@ -198,48 +200,38 @@ deferring to a source that (for net8.0/EF Core 8, and for net6.0/net7.0
 regardless of version) never fires — worth filing against
 `open-telemetry/opentelemetry-dotnet-instrumentation`.
 
-### Known failure: ASP.NET Core server spans on net6.0
+### Fixed: ASP.NET Core server spans on net6.0
 
-`TestAspNetCoreHttpClientNet6`'s whole test, and the `"6.0"` subtest of
-`TestGrpcNetClient`, `TestQuartzJob`, `TestRedisCache`, and
-`TestSqlClientPostgres` (each of which also runs net7.0-net10.0 subtests),
-are `t.Skip()`-ed for the same reason: no ASP.NET Core server span is ever
-produced on net6.0, even though each scenario's own client-side spans
-(HttpClient, gRPC, Quartz job, Redis, Npgsql) arrive fine — this was never
-actually exercised in CI before the `e2e`/`pr-validation` workflows landed,
-only manually against a locally built dev-loop tracer-home, so it went
-uncaught. It does not reproduce on net7.0+.
+Kept as a record, since the shape of this bug is what `aspnetcorenet6` and
+`aspnetcorenet8` exist as a pair to catch.
 
-**Not the previously-documented `AspNetCoreInitializer` version-mismatch
-bug.** That bug (`efcorenet6` section above) doesn't reproduce here: routing the
-tracer's own diagnostic logs to console (`OTEL_DOTNET_AUTO_LOGGER=console`,
-`OTEL_LOG_LEVEL=debug` — see `harness.StartInstrumentedApp`) shows
-`OpenTelemetry.Instrumentation.AspNetCore.dll` loading cleanly at version
-`1.16.0.1140` on net6.0, and `AspNetCoreInitializer` completing with no
-exception. Either upstream has since aligned every TFM folder's contrib
-package version, or this combination was never actually affected by that
-bug in the first place.
+`TestAspNetCoreHttpClientNet6`, and the `"6.0"` subtest of
+`TestGrpcNetClient`, `TestQuartzJob`, `TestRedisCache` and
+`TestSqlClientPostgres`, all produced zero ASP.NET Core server spans while
+each scenario's own client-side spans (HttpClient, gRPC, Quartz job, Redis,
+Npgsql) arrived fine. It never reproduced on net7.0+, so those subtests and
+`aspnetcorenet8` stayed green throughout. Nothing here had been exercised in
+CI before the `e2e`/`pr-validation` workflows landed — only manually against
+a locally built dev-loop tracer-home — so it went uncaught for a while.
 
-**Narrowed, not fully root-caused.** The `TracerProviderSdk` build log shows
-a `ParentBasedSampler` and a `BatchActivityExportProcessor` getting added,
-and it exports other scenarios' client spans fine — but never logs a
-"Sources added" event for `Microsoft.AspNetCore`. `AspNetCoreInitializer.cs`
-(`src/OpenTelemetry.AutoInstrumentation/Loading/Initializers/`) constructs
-`OpenTelemetry.Instrumentation.AspNetCore.AspNetCoreInstrumentation`
-directly via `Activator.CreateInstance`, bypassing the normal
-`TracerProviderBuilder.AddAspNetCoreInstrumentation()` extension method
-entirely — the working theory is that this manual construction path never
-wires the ASP.NET Core `ActivitySource` into the ambient `TracerProvider`
-the way the builder extension method would. Confirming that needs reading
-`AspNetCoreInstrumentation`/`HttpInListener` in
-`open-telemetry/opentelemetry-dotnet-contrib`, which isn't checked out
-alongside this repo or `dash0hq/opentelemetry-dotnet-instrumentation`.
+The cause was not the `AspNetCoreInitializer` version mismatch documented in
+the `efcorenet6` section above, and not the `Activator.CreateInstance`
+construction path that bypasses `AddAspNetCoreInstrumentation()` either.
+`HttpInListener` was emitting activities the whole time; they were dropped
+at sampling because nothing registered the `ActivitySource` it emits on.
+`ActivitySourceFactory.Create<HttpInListener>()` names that source after its
+containing assembly — `OpenTelemetry.Instrumentation.AspNetCore` — and the
+tracer's hand-rolled `AddAspNetCoreInstrumentation` in
+`EnvironmentConfigurationTracerHelper.cs` registered only
+`Microsoft.AspNetCore` plus the two Blazor sources, where contrib's own
+extension method registers both. On net7.0+ ASP.NET Core emits server
+activities from its own native `Microsoft.AspNetCore` source, which was
+registered — hence the asymmetry.
 
-**Reproducing:** run any of the five skipped tests locally (remove the
-`t.Skip()` call) against a tracer-home built from the SHA in
-`.upstream-ref`; the container log — captured automatically on failure via
-`harness.StartInstrumentedApp`'s `t.Cleanup`, or watchable live with
-`docker logs -f` — shows the sequence described above.
+Fixed upstream in `dash0hq/opentelemetry-dotnet-instrumentation@70f46a70`,
+which the SHA in `.upstream-ref` has included since
+`de445f5a00891dd60484c08fb2b19c27c2836970`. Tracked as
+dash0hq/opentelemetry-dotnet-distribution#7.
 
 ## Adding a scenario
 

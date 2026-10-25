@@ -44,13 +44,6 @@ func TestSqlClientPostgres(t *testing.T) {
 
 	for _, dotnetVersion := range harness.VersionsUnderTest(t, dotNetVersions) {
 		t.Run(dotnetVersion, func(t *testing.T) {
-			if dotnetVersion == "6.0" {
-				t.Skip("known regression: no ASP.NET Core server span is ever produced on " +
-					"net6.0 -- see test/e2e/README.md's \"Known failure: ASP.NET Core " +
-					"server spans on net6.0\" section. Unskip to check whether it's fixed " +
-					"upstream.")
-			}
-
 			sink := otelsink.Start(t)
 
 			container := harness.StartInstrumentedApp(t, ctx, sink, harness.AppScenario{
