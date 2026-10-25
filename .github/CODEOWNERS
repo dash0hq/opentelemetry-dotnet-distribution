@@ -1,0 +1,3 @@
+# Pull requests against this repo need a review from the OSS team.
+# Enforced by main's branch protection (require review from Code Owners).
+*       @dash0hq/oss
