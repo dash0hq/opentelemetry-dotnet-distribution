@@ -194,12 +194,17 @@ func ContainerHTTPGet(t testing.TB, ctx context.Context, container testcontainer
 // (the .NET distribution) has no go.mod of its own — only this module,
 // nested under test/e2e, does — so a go.mod search would stop one level
 // too shallow.
+//
+// .git being a file rather than a directory counts too: that's what a git
+// worktree checkout looks like (the file points at the real git dir), and
+// the suite has to run from one of those just as well as from a plain
+// clone.
 func repoRoot(t testing.TB) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	require.NoError(t, err)
 	for {
-		if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && info.IsDir() {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
