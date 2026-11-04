@@ -78,6 +78,7 @@ jobs:
     uses: ./.github/workflows/build-and-e2e.yml
     with:
       upstream_sha: ${{ needs.resolve-upstream.outputs.sha }}
+      distro_version: ${{ needs.resolve-upstream.outputs.release_tag }}
     secrets: inherit
 
   release:
