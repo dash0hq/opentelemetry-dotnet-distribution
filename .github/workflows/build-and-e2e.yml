@@ -13,6 +13,11 @@ on:
         description: "Commit SHA of dash0hq/opentelemetry-dotnet-instrumentation to build"
         required: true
         type: string
+      distro_version:
+        description: "Release tag (e.g. v1.0.1) reported as telemetry.distro.version. Empty for PR builds, which then report the fork's 0.0.0-dev fallback."
+        required: false
+        type: string
+        default: ""
     secrets:
       REPOSITORY_FULL_ACCESS_GITHUB_TOKEN:
         required: false
@@ -105,6 +110,11 @@ jobs:
         # including test-applications that pin NServiceBus 9.2.6 (net8-only),
         # which fails on the multi-TFM restore. BuildTracer restores only the
         # projects it depends on.
+        env:
+          # Read by OpenTelemetry.AutoInstrumentation.csproj in the fork and
+          # embedded as assembly metadata for telemetry.distro.version.
+          # Assembly versions themselves stay on MinVer (see the tag fetch above).
+          DASH0_DISTRO_VERSION: ${{ inputs.distro_version }}
         run: ./build.sh BuildTracer
 
       - name: Strip native binaries from managed tracer-home
