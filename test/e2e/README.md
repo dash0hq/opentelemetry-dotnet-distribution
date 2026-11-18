@@ -229,9 +229,8 @@ activities from its own native `Microsoft.AspNetCore` source, which was
 registered — hence the asymmetry.
 
 Fixed upstream in `dash0hq/opentelemetry-dotnet-instrumentation@70f46a70`,
-which the SHA in `.upstream-ref` has included since
-`de445f5a00891dd60484c08fb2b19c27c2836970`. Tracked as
-dash0hq/opentelemetry-dotnet-distribution#7.
+so any upstream commit pinned in `.upstream-ref` that descends from it
+includes the fix. Tracked as dash0hq/opentelemetry-dotnet-distribution#7.
 
 ## Adding a scenario
 
