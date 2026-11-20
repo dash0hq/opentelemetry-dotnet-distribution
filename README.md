@@ -92,6 +92,9 @@ the distribution:
   instrumentations upstream ships (ASP.NET Core, HttpClient, gRPC, EF Core,
   StackExchange.Redis, MongoDB, Kafka, RabbitMQ, and more — see the
   [upstream list](https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation#supported-libraries-frameworks-and-runtimes));
+- propagates trace context with `tracecontext,baggage,xray` unless
+  `OTEL_PROPAGATORS` is set, so traces stay connected through AWS load
+  balancers (see [Propagators](#propagators));
 - adds resource attributes: upstream's defaults (process, host, SDK, plus
   any `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`), and the
   distribution identity (`telemetry.distro.name = dash0-dotnet`,
@@ -115,10 +118,28 @@ The most common ones:
 | `OTEL_DOTNET_AUTO_METRICS_ENABLED_INSTRUMENTATIONS` | Same, for metrics. |
 | `OTEL_DOTNET_AUTO_LOGS_ENABLED_INSTRUMENTATIONS` | Same, for logs. |
 | `OTEL_DOTNET_AUTO_LOG_DIRECTORY` | Where the profiler writes its own diagnostic logs. |
+| `OTEL_PROPAGATORS` | Comma-separated propagators: `tracecontext`, `baggage`, `b3multi`, `b3`, `xray`. Default: `tracecontext,baggage,xray`. |
 | `OTEL_SDK_DISABLED` | Set to `true` to disable telemetry export while keeping the profiler loaded. |
 
-Any other `OTEL_*` variable that upstream honors works here too — this
-distribution does not fork or rewrite the configuration surface.
+Any other `OTEL_*` variable that upstream honors works here too. The
+propagator default differs from upstream's `tracecontext,baggage`, as described
+below.
+
+### Propagators
+
+> [!WARNING]
+> **Breaking change:** the default propagators change from
+> `tracecontext,baggage` to `tracecontext,baggage,xray`. When a request carries
+> both `traceparent` and `X-Amzn-Trace-Id`, the X-Ray context wins over
+> `traceparent`. Set `OTEL_PROPAGATORS=tracecontext,baggage` to restore the
+> old behavior.
+
+The default `tracecontext,baggage,xray` writes both `traceparent` and the AWS
+X-Ray `X-Amzn-Trace-Id` header on outgoing requests, and reads both on incoming
+ones. When both headers are valid, the X-Ray context wins. An X-Ray header with
+only a `Root` (what an AWS load balancer adds to a request that had no X-Ray
+header) is ignored, and the `traceparent` context is kept. Setting
+`OTEL_PROPAGATORS` replaces the default entirely.
 
 ## Development
 
