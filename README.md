@@ -131,15 +131,28 @@ below.
 > **Breaking change:** the default propagators change from
 > `tracecontext,baggage` to `tracecontext,baggage,xray`. When a request carries
 > both `traceparent` and `X-Amzn-Trace-Id`, the X-Ray context wins over
-> `traceparent`. Set `OTEL_PROPAGATORS=tracecontext,baggage` to restore the
-> old behavior.
+> `traceparent`. This can attach spans to the wrong parent when a hop in
+> between forwards incoming headers unchanged but writes a new `traceparent`,
+> such as a proxy instrumented with `tracecontext` only: the forwarded X-Ray
+> header still points at the hop before that proxy. Set
+> `OTEL_PROPAGATORS=tracecontext,baggage` to restore the old behavior.
 
 The default `tracecontext,baggage,xray` writes both `traceparent` and the AWS
 X-Ray `X-Amzn-Trace-Id` header on outgoing requests, and reads both on incoming
 ones. When both headers are valid, the X-Ray context wins. An X-Ray header with
 only a `Root` (what an AWS load balancer adds to a request that had no X-Ray
-header) is ignored, and the `traceparent` context is kept. Setting
-`OTEL_PROPAGATORS` replaces the default entirely.
+header) is ignored, and the `traceparent` context is kept.
+
+X-Ray wins wherever `xray` sits in the list, so reordering `OTEL_PROPAGATORS`
+(for example `xray,tracecontext,baggage`) doesn't change which context is
+used. Leaving `xray` out is the only way to make `traceparent` win.
+
+Setting `OTEL_PROPAGATORS` replaces the default entirely. With a configuration
+file (`OTEL_CONFIG_FILE`), the propagators come from the file's `propagator`
+section instead, and `OTEL_PROPAGATORS` applies only if the file references it,
+as in `composite_list: ${OTEL_PROPAGATORS}`. The default is used only when the
+file has no `propagator` section. See the fork's
+[file-based configuration docs](https://github.com/dash0hq/opentelemetry-dotnet-instrumentation/blob/dash0-main/docs/file-based-configuration.md#propagator-configuration).
 
 ## Development
 
